@@ -36,11 +36,10 @@ factorio --start-server save.zip --rcon-port 27015 --rcon-password mypassword
 | `FACTORIO_RCON_HOST` | `127.0.0.1` | RCON server host |
 | `FACTORIO_RCON_PORT` | `27015` | RCON server port |
 | `FACTORIO_RCON_PASSWORD` | `mypassword` | RCON password |
-| `FACTORIO_GOALS_FILE` | `goals.json` | File path for goal planner persistence |
 | `FACTORIO_BUILDINGS_FILE` | `buildings.json` | File path for building memory persistence |
 | `FACTORIO_PLAYER` | first connected player | Name of the player this instance controls |
 
-To run several agents in one game, start one MCP instance per agent, each with its own `FACTORIO_PLAYER` (a player connected to the game under that name) and its own `FACTORIO_BUILDINGS_FILE` and `FACTORIO_GOALS_FILE`. Walking and mining state is kept per player, so the instances do not interfere.
+To run several agents in one game, start one MCP instance per agent, each with its own `FACTORIO_PLAYER` (a player connected to the game under that name) and its own `FACTORIO_BUILDINGS_FILE`. Walking and mining state is kept per player, so the instances do not interfere.
 
 ### 3. Build
 
@@ -185,20 +184,6 @@ Add to your `.vscode/mcp.json`:
 | `GetChatMessages` | Get chat messages from the in-game chat log (with polling support). |
 | `SendChatMessage` | Send an `[AI]`-tagged chat message visible to all players. |
 
-### Goal Planning
-
-| Tool | Description |
-|------|-------------|
-| `SetGoal` | Create a new goal with optional ordered steps. |
-| `GetActiveGoal` | Get the currently active goal with step details. |
-| `GetAllGoals` | Get a summary of all goals (completed, failed, suspended, pending). |
-| `AdvanceGoalStep` | Mark the current step as completed and advance. |
-| `AddGoalSteps` | Add new steps to the active goal. |
-| `CompleteGoal` | Mark the active goal as completed. |
-| `FailGoal` | Mark the active goal as failed with a reason. |
-| `SuspendGoal` | Suspend the active goal to work on something urgent. |
-| `ResumeGoal` | Resume a previously suspended goal. |
-
 ### Energy
 
 | Tool | Description |
@@ -258,13 +243,11 @@ FactorioMCP/
 │   ├── RconClient.cs                   # Source RCON protocol over TCP
 │   └── RconPacket.cs                   # RCON packet types and record
 ├── Models/
-│   ├── Goal.cs                         # Goal/step data model
 │   └── TrackedBuilding.cs              # Building memory data model
 ├── Services/
 │   ├── FactorioService.cs              # High-level game operations via Lua
 │   ├── EnergyService.cs                # Electric network inspection via Lua
 │   ├── BlueprintService.cs             # Blueprint and ghost entity operations
-│   ├── GoalPlannerService.cs           # Goal tracking with JSON persistence
 │   ├── BuildingMemoryService.cs        # Building tracking with JSON persistence
 │   ├── GameCommandQueue.cs             # Serializes concurrent MCP tool calls
 │   └── RconConnectionService.cs        # RCON connection on startup
@@ -276,7 +259,6 @@ FactorioMCP/
 │   ├── WorldTools.cs                   # Nearby entities, distance, scan
 │   ├── WaitTools.cs                    # Wait for crafting, position, ticks
 │   ├── ChatTools.cs                    # Chat message listener, send/receive
-│   ├── GoalTools.cs                    # Goal planning and tracking
 │   ├── EnergyTools.cs                  # Electric network and power inspection
 │   ├── ResearchTools.cs                # Research status, start research
 │   ├── RecipeTools.cs                  # Recipe and technology queries

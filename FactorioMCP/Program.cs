@@ -15,7 +15,6 @@ builder.Services
     .AddSingleton<PathfindingService>()
     .AddSingleton<EnergyService>()
     .AddSingleton<BlueprintService>()
-    .AddSingleton<GoalPlannerService>()
     .AddSingleton<BuildingMemoryService>()
     .AddSingleton<BeltPlannerService>()
     .AddSingleton<MiningService>()

@@ -51,12 +51,11 @@ FactorioMCP.Tests → FactorioMCP
 | RCON Client | ✅ Functional | Low-level Source RCON protocol over TCP with auto-reconnection and exponential backoff |
 | Factorio Service | ✅ Functional | High-level game operations (movement, crafting, building, world queries) |
 | Energy Service | ✅ Functional | Electric network statistics (production/consumption/satisfaction) and per-entity power inspection |
-| Goal Planner | ✅ Functional | AI goal tracking with state machine lifecycle, ordered steps, suspend/resume, and JSON file persistence |
 | Building Memory | ✅ Functional | Tracks placed buildings with spatial queries, auto-tracking on place/mine, labels, and JSON file persistence |
 | Vision Service | ✅ Functional | Annotated screenshots with entity bounding box overlays, inserter direction arrows, numbered labels, and structured map legends for vision-model analysis |
 | Flow Service | ✅ Functional | Item flow tracing (belt chains, inserter connections, drill outputs), flow graph visualization, belt placement preview, and factory connection summary |
 | Production Planning | ✅ Functional | Recipe rate calculation, smelter line layout synthesis, full production chain planning with machine counts/belt tiers/resource patches, layout-to-blueprint export, and blueprint production throughput analysis |
-| MCP Tools | ✅ Functional | Movement, inventory/crafting, entity placement/mining, entity interaction (insert/remove items, inspect), world scanning, proximity checking, chat message, goal planning, energy management, research, building memory, vision screenshots, task primitives (gather/refuel/smelt), production planning, blueprint decode/encode/analyze/trace/production-analysis tools exposed via MCP SDK |
+| MCP Tools | ✅ Functional | Movement, inventory/crafting, entity placement/mining, entity interaction (insert/remove items, inspect), world scanning, proximity checking, chat message, energy management, research, building memory, vision screenshots, task primitives (gather/refuel/smelt), production planning, blueprint decode/encode/analyze/trace/production-analysis tools exposed via MCP SDK |
 | MCP Hosting | ✅ Functional | Program.cs wiring with DI, configuration, stdio transport |
 | Realistic Behaviors | ✅ Functional | Walking with real physics, crafting with real queue, proximity validation on place/mine, wait/polling for crafting completion, position arrival, and game tick timing — no cheating |
 
@@ -83,7 +82,6 @@ RCON connection settings are read from environment variables:
 | `FACTORIO_RCON_HOST` | `127.0.0.1` | RCON server host |
 | `FACTORIO_RCON_PORT` | `27015` | RCON server port |
 | `FACTORIO_RCON_PASSWORD` | `mypassword` | RCON password |
-| `FACTORIO_GOALS_FILE` | `goals.json` | File path for goal planner persistence |
 | `FACTORIO_BUILDINGS_FILE` | `buildings.json` | File path for building memory persistence |
 
 ___
@@ -151,7 +149,6 @@ These were analyzed and confirmed to be well-designed, non-overlapping, and usef
 
 - **All NavigationTools** (`MoveToEntity`, `MoveToResource`, `MoveToBuilding`) — excellent high-level convenience
 - **All BatchTools** (`MineEntityMultiple`, `InspectEntityMultiple`, etc.) — critical for LLM efficiency
-- **All GoalTools** — well-structured planning system
 - **All ResearchTools** — clear and necessary
 - **All TaskTools** (`GatherResource`, `RefuelEntity`, `Smelt`) — excellent high-level composition
 - **Core WaitTools** (`WaitForCrafting`, `WaitForPosition`, `WaitForItemCount`, `WaitForEntityStatus`, `WaitForEntityInventory`) — essential synchronization

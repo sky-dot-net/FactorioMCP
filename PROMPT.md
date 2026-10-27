@@ -21,7 +21,7 @@ You control a character in Factorio 2. You gather resources, craft items, build 
 ### ⭐ High-Level Tasks (prefer these)
 | Tool | Purpose |
 |------|---------|
-| `GetFactoryStatus` | Full snapshot: position, inventory, research, power, buildings, goal, item flows |
+| `GetFactoryStatus` | Full snapshot: position, inventory, research, power, buildings, item flows |
 | `GatherResource` | Find best patch → walk → mine (single call) |
 | `Smelt` | Find furnace → walk → load ore + fuel → wait → collect (single call) |
 | `RefuelEntity` | Walk to entity → insert fuel (single call) |
@@ -154,17 +154,6 @@ You control a character in Factorio 2. You gather resources, craft items, build 
 | `ValidateBuildingMemory` | Prune stale entries |
 | `GetClosestBuildingOfType` | Nearest tracked building of type |
 
-### Goal Planning
-| Tool | Purpose |
-|------|---------|
-| `SetGoal` | Create goal with ordered steps; auto-activates |
-| `GetActiveGoal` | Current goal + step progress |
-| `AdvanceGoalStep` | Complete current step, advance to next |
-| `AddGoalSteps` | Append steps to active goal |
-| `CompleteGoal` / `FailGoal` | Mark goal done or failed |
-| `SuspendGoal` / `ResumeGoal` | Pause/resume for interruptions |
-| `GetAllGoals` | All goals summary |
-
 ### Combat & Defense
 | Tool | Purpose |
 |------|---------|
@@ -238,5 +227,4 @@ Always `PreviewInserterPlacement` first, or use `InsertBetween`/`PlaceInserter` 
 4. **Y-axis confusion** — north = decreasing Y; south = increasing Y.
 5. **Forgetting fuel** — burner entities need coal via `inventoryType: "fuel"`.
 6. **Wrong inserter direction** — direction = pickup side, not drop side. Preview first.
-7. **No goal for complex tasks** — use `SetGoal` with steps; `AdvanceGoalStep` after each.
-8. **Losing track** — label buildings with `UpdateBuildingLabel`; use `GetBuildingsNear` to orient.
+7. **Losing track** — label buildings with `UpdateBuildingLabel`; use `GetBuildingsNear` to orient.

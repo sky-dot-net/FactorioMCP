@@ -911,80 +911,6 @@ Clear all buildings from AI memory. **Does NOT remove buildings from the game.**
 
 ---
 
-## Goal Planning
-
-Only one goal can be active at a time. Goals persist across server restarts.
-
-### `SetGoal`
-Create a goal with ordered steps. Auto-activates if no goal is currently active.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `description` | `string` | required | What the goal achieves |
-| `steps` | `List<string>?` | none | Optional ordered steps |
-
----
-
-### `GetActiveGoal`
-Get the currently active goal, step progress, and completed steps.
-
----
-
-### `GetAllGoals`
-Get a summary of all goals (active, completed, failed, suspended, pending).
-
----
-
-### `AdvanceGoalStep`
-Mark the current step as completed and advance to the next.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `notes` | `string?` | none | Optional completion notes |
-
----
-
-### `AddGoalSteps`
-Append new steps to the active goal.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `steps` | `List<string>` | Steps to add |
-
----
-
-### `CompleteGoal`
-Mark the active goal as completed.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `notes` | `string?` | none | |
-
----
-
-### `FailGoal`
-Mark the active goal as failed.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `reason` | `string` | Why it failed |
-
----
-
-### `SuspendGoal`
-Suspend the active goal (preserves progress) to handle something urgent.
-
----
-
-### `ResumeGoal`
-Resume a suspended goal. No other goal can be active.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `goalId` | `string` | From `GetAllGoals` |
-
----
-
 ## Chat
 
 ### `GetChatMessages`
@@ -1027,7 +953,7 @@ Take an annotated PNG screenshot of the game world. Draws entity bounding boxes 
 ## Status
 
 ### `GetFactoryStatus`
-Comprehensive factory snapshot in a single call: position, inventory, crafting queue, research, nearby resources, nearby entities, power status, building summary, active goal, and **item flow connections** (inserter-mediated machine-to-machine links and drill outputs, with belt-to-belt transfers filtered out).
+Comprehensive factory snapshot in a single call: position, inventory, crafting queue, research, nearby resources, nearby entities, power status, building summary, and **item flow connections** (inserter-mediated machine-to-machine links and drill outputs, with belt-to-belt transfers filtered out).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|

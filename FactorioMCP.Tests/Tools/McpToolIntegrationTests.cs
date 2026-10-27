@@ -12,7 +12,6 @@ public class McpToolIntegrationTests
 {
     private readonly CapturingRconClient _rcon = new();
     private readonly FactorioService _factorio;
-    private readonly GoalPlannerService _goals;
     private readonly BuildingMemoryService _buildingMemory;
     private readonly MiningService _mining;
     private readonly GameCommandQueue _queue = new();
@@ -21,8 +20,6 @@ public class McpToolIntegrationTests
     {
         _factorio = new FactorioService(_rcon);
         _mining = new MiningService(_rcon);
-        _goals = new GoalPlannerService(
-            Path.Combine(Path.GetTempPath(), $"goals-mcp-{Guid.NewGuid():N}.json"));
         _buildingMemory = new BuildingMemoryService(
             Path.Combine(Path.GetTempPath(), $"buildings-mcp-{Guid.NewGuid():N}.json"));
     }
@@ -43,7 +40,6 @@ public class McpToolIntegrationTests
         typeof(InteractionTools),
         typeof(WaitTools),
         typeof(ChatTools),
-        typeof(GoalTools),
         typeof(EnergyTools),
         typeof(BlueprintTools),
         typeof(NavigationTools),
@@ -79,9 +75,6 @@ public class McpToolIntegrationTests
         services.AddSingleton<BlueprintCodecService>();
         services.AddSingleton<BlueprintAnalysisService>();
 
-        var tempPath = Path.Combine(Path.GetTempPath(), $"goals-di-{Guid.NewGuid():N}.json");
-        services.AddSingleton(new GoalPlannerService(tempPath));
-
         var buildingsPath = Path.Combine(Path.GetTempPath(), $"buildings-di-{Guid.NewGuid():N}.json");
         services.AddSingleton(new BuildingMemoryService(buildingsPath));
 
@@ -101,9 +94,8 @@ public class McpToolIntegrationTests
     [Fact]
     public async Task StatusTools_GetFactoryStatus_ReturnsComprehensiveStatus()
     {
-        await _goals.SetGoalAsync("Test factory goal", ["Step 1", "Step 2"]);
         var flowService = new FlowService(_rcon);
-        var tools = new StatusTools(_factorio, flowService, _buildingMemory, _goals, _queue);
+        var tools = new StatusTools(_factorio, flowService, _buildingMemory, _queue);
 
         var result = await tools.GetFactoryStatus(
             resourceScanRadius: 100,
@@ -129,8 +121,7 @@ public class McpToolIntegrationTests
         // Result merges game state with C#-side state
         Assert.Contains("\"building_summary\":", result);
         Assert.Contains("total_buildings", result);
-        Assert.Contains("\"active_goal\":", result);
-        Assert.Contains("Test factory goal", result);
+        Assert.DoesNotContain("active_goal", result);
     }
 
     // ── EntityTools – Failure Tracking ───────────────────────────────
