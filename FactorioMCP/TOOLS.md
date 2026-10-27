@@ -854,6 +854,21 @@ Calculate belt tile positions and directions for a route between two points. Sup
 
 **Returns:** Ordered list of `{ "x", "y", "direction" }` tiles.
 
+### `RouteBelt`
+Route a belt around obstacles. Reads blocked tiles (entities, items on the ground, water) from the game and runs A* from start to end, jumping obstacles with underground belt pairs up to the prototype's max underground distance.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `startX` | `double` | required | First belt tile (items enter here) |
+| `startY` | `double` | required | |
+| `endX` | `double` | required | Last belt tile (items leave here) |
+| `endY` | `double` | required | |
+| `margin` | `int` | `10` | Extra tiles around the start-end rectangle (max 50; search area max 40,000 tiles) |
+| `beltName` | `string` | `"transport-belt"` | Belt entity |
+| `undergroundName` | `string` | `"underground-belt"` | Underground entity of the same tier |
+
+**Returns:** `{ "success", "belts", "underground_pairs", "steps": [{ "entity", "x", "y", "direction", "belt_type"? }] }`. Errors: `start_blocked`, `end_blocked`, `no_route`, `area_too_large`.
+
 ---
 
 ## Building Memory

@@ -17,6 +17,7 @@ builder.Services
     .AddSingleton<BlueprintService>()
     .AddSingleton<BuildingMemoryService>()
     .AddSingleton<BeltPlannerService>()
+    .AddSingleton<BeltRouterService>()
     .AddSingleton<MiningService>()
     .AddSingleton<VisionService>()
     .AddSingleton<CombatService>()

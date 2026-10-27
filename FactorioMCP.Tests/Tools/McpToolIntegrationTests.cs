@@ -67,6 +67,7 @@ public class McpToolIntegrationTests
         services.AddSingleton<MiningService>();
         services.AddSingleton<GameCommandQueue>();
         services.AddSingleton<BeltPlannerService>();
+        services.AddSingleton<BeltRouterService>();
         services.AddSingleton<VisionService>();
         services.AddSingleton<FlowService>();
         services.AddSingleton<RecipeRateCalculatorService>();
