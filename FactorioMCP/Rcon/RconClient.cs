@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -34,9 +36,35 @@ internal class RconClient : IAsyncDisposable, IDisposable
     private const int MaxConsecutiveNothingResponses = 3;
     private int _consecutiveNothingCount;
 
-    public RconClient(ILogger<RconClient>? logger = null)
+    /// <summary>
+    /// Lua expression that every service uses to address the controlled player.
+    /// </summary>
+    internal const string DefaultPlayerExpression = "game.connected_players[1]";
+
+    /// <summary>
+    /// Lua expression for the player this instance controls. Set via <c>FACTORIO_PLAYER</c>
+    /// to let several MCP instances drive different players in the same game.
+    /// </summary>
+    public string PlayerExpression { get; }
+
+    public RconClient(ILogger<RconClient>? logger = null, IConfiguration? configuration = null)
     {
         _logger = logger ?? NullLogger<RconClient>.Instance;
+        PlayerExpression = BuildPlayerExpression(configuration?["FACTORIO_PLAYER"]);
+    }
+
+    /// <summary>
+    /// Build the Lua expression for a player name, or the first connected player when no name is given.
+    /// </summary>
+    internal static string BuildPlayerExpression(string? playerName)
+    {
+        if (string.IsNullOrWhiteSpace(playerName))
+            return DefaultPlayerExpression;
+
+        if (!Regex.IsMatch(playerName, @"^[A-Za-z0-9_.\-]+$"))
+            throw new ArgumentException($"Invalid FACTORIO_PLAYER name: '{playerName}'", nameof(playerName));
+
+        return $"game.get_player(\"{playerName}\")";
     }
 
     /// <summary>
@@ -132,6 +160,8 @@ internal class RconClient : IAsyncDisposable, IDisposable
     public Task<string> ExecuteLuaAsync(string luaCode, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(luaCode);
+        if (PlayerExpression != DefaultPlayerExpression)
+            luaCode = luaCode.Replace(DefaultPlayerExpression, PlayerExpression, StringComparison.Ordinal);
         return ExecuteAsync($"/silent-command {luaCode}", cancellationToken);
     }
 

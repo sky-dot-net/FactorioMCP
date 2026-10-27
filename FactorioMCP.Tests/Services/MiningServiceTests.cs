@@ -113,7 +113,7 @@ public class MiningServiceTests
         // update_selected_entity must be called before mining_state in the on_tick handler
         // so the player has a selected entity to mine
         Assert.Contains("update_selected_entity", _rcon.LastCommand!);
-        int selectIdx = _rcon.LastCommand!.IndexOf("update_selected_entity(storage.mine_state.position)");
+        int selectIdx = _rcon.LastCommand!.IndexOf("update_selected_entity(m.position)");
         int miningIdx = _rcon.LastCommand.IndexOf("p.mining_state = {mining = true");
         Assert.True(selectIdx < miningIdx, "update_selected_entity must come before mining_state in on_tick handler");
     }
@@ -185,7 +185,7 @@ public class MiningServiceTests
     {
         await _service.StopMiningAsync();
 
-        Assert.Contains("storage.mine_state = nil", _rcon.LastCommand!);
+        Assert.Contains("storage.mine_states[player.index] = nil", _rcon.LastCommand!);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class MiningServiceTests
         await _service.StopMiningAsync();
 
         // on_tick handler should NOT be removed — it's shared with PathfindingService
-        Assert.Contains("storage.mine_state = nil", _rcon.LastCommand!);
+        Assert.Contains("storage.mine_states[player.index] = nil", _rcon.LastCommand!);
         Assert.DoesNotContain("script.on_event(defines.events.on_tick, nil)", _rcon.LastCommand!);
     }
 

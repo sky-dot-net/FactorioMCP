@@ -15,7 +15,7 @@ namespace FactorioMCP.Services;
 /// 
 /// In Factorio 2, walking_state only persists for a single tick, so a Lua on_tick handler
 /// must re-apply the walking direction every tick. C# controls the direction by writing
-/// to storage.walk_dir, and the on_tick handler reads it to keep the player moving.
+/// to storage.walk_dirs[player index], and the on_tick handler reads it to keep the player moving.
 /// </summary>
 internal sealed class PathfindingService(RconClient rcon)
 {
@@ -336,7 +336,8 @@ internal sealed class PathfindingService(RconClient rcon)
 
         await rcon.ExecuteLuaAsync($$"""
             storage.nav_results = storage.nav_results or {}
-            storage.walk_dir = nil
+            storage.walk_dirs = storage.walk_dirs or {}
+            storage.walk_dirs[game.connected_players[1].index] = nil
             script.on_event(defines.events.on_script_path_request_finished, function(event)
                 if event.path and #event.path > 0 then
                     storage.nav_results[event.id] = {status = "ok", path = event.path, tick = game.tick}
@@ -442,8 +443,9 @@ internal sealed class PathfindingService(RconClient rcon)
     {
         _lastDirection = null;
         await rcon.ExecuteLuaAsync("""
-            storage.walk_dir = nil
-            game.connected_players[1].walking_state = {walking = false, direction = defines.direction.north}
+            local p = game.connected_players[1]
+            if storage.walk_dirs then storage.walk_dirs[p.index] = nil end
+            p.walking_state = {walking = false, direction = defines.direction.north}
             rcon.print('ok')
             """, cancellationToken);
     }
@@ -452,7 +454,8 @@ internal sealed class PathfindingService(RconClient rcon)
     {
         _lastDirection = direction;
         await rcon.ExecuteLuaAsync(string.Create(CultureInfo.InvariantCulture, $$"""
-            storage.walk_dir = {{direction}}
+            storage.walk_dirs = storage.walk_dirs or {}
+            storage.walk_dirs[game.connected_players[1].index] = {{direction}}
             rcon.print('ok')
             """), cancellationToken);
     }

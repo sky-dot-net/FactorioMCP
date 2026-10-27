@@ -21,7 +21,7 @@ internal sealed class MiningService(RconClient rcon)
     /// <summary>
     /// Start mining a resource entity at the given position using <c>player.mining_state</c>.
     /// Validates proximity, selects the entity via <c>update_selected_entity</c>, stores
-    /// mining position in <c>storage.mine_state</c>, and installs the on_tick handler
+    /// mining position in this player's entry of <c>storage.mine_states</c>, and installs the on_tick handler
     /// to continuously re-apply mining_state every tick (required in Factorio 2 where
     /// mining_state does not persist across ticks). Returns entity info, current amount,
     /// and estimated mining time per unit.
@@ -52,7 +52,8 @@ internal sealed class MiningService(RconClient rcon)
             local mining_time = e.prototype.mineable_properties.mining_time or 1.0
             -- Store exact entity position for the on_tick handler
             local epos = {e.position.x, e.position.y}
-            storage.mine_state = {position = epos}
+            storage.mine_states = storage.mine_states or {}
+            storage.mine_states[player.index] = {position = epos}
             {{InstallMiningOnTickHandler}}
             -- Select the entity and start mining immediately
             player.update_selected_entity(epos)
@@ -103,16 +104,16 @@ internal sealed class MiningService(RconClient rcon)
     }
 
     /// <summary>
-    /// Stop mining by clearing <c>storage.mine_state</c>.
+    /// Stop mining by clearing this player's entry in <c>storage.mine_states</c>.
     /// The on_tick handler remains installed to avoid interfering with
     /// PathfindingService's walking — it simply skips the mining block when
-    /// <c>storage.mine_state</c> is nil.
+    /// <c>storage.mine_states</c> has no entry for a player.
     /// </summary>
     public Task<string> StopMiningAsync(CancellationToken cancellationToken = default)
     {
         var lua = """
             local player = game.connected_players[1]
-            storage.mine_state = nil
+            if storage.mine_states then storage.mine_states[player.index] = nil end
             player.mining_state = {mining = false}
             rcon.print('{"success":true,"status":"mining_stopped"}')
             """;

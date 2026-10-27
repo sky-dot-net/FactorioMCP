@@ -49,20 +49,24 @@ internal sealed partial class FactorioService(RconClient rcon)
     /// <summary>
     /// Lua on_tick handler that continuously re-applies walking_state and mining_state
     /// every tick. Required in Factorio 2 where both states reset after each tick.
-    /// Reads from <c>storage.walk_dir</c> (set by PathfindingService) and
-    /// <c>storage.mine_state</c> (set by MiningService).
+    /// Reads from <c>storage.walk_dirs</c> (set by PathfindingService) and
+    /// <c>storage.mine_states</c> (set by MiningService), both keyed by player index,
+    /// so several MCP instances can each drive their own player.
     /// </summary>
     internal const string LuaOnTickHandler = """
         script.on_event(defines.events.on_tick, function()
-            local p = game.connected_players[1]
-            if not p then return end
-            local d = storage.walk_dir
-            if d ~= nil and p.character and p.character.valid then
-                p.walking_state = {walking = true, direction = d}
+            for index, d in pairs(storage.walk_dirs or {}) do
+                local p = game.get_player(index)
+                if p and p.connected and p.character and p.character.valid then
+                    p.walking_state = {walking = true, direction = d}
+                end
             end
-            if storage.mine_state then
-                p.update_selected_entity(storage.mine_state.position)
-                p.mining_state = {mining = true, position = storage.mine_state.position}
+            for index, m in pairs(storage.mine_states or {}) do
+                local p = game.get_player(index)
+                if p and p.connected then
+                    p.update_selected_entity(m.position)
+                    p.mining_state = {mining = true, position = m.position}
+                end
             end
         end)
         """;

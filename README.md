@@ -38,6 +38,9 @@ factorio --start-server save.zip --rcon-port 27015 --rcon-password mypassword
 | `FACTORIO_RCON_PASSWORD` | `mypassword` | RCON password |
 | `FACTORIO_GOALS_FILE` | `goals.json` | File path for goal planner persistence |
 | `FACTORIO_BUILDINGS_FILE` | `buildings.json` | File path for building memory persistence |
+| `FACTORIO_PLAYER` | first connected player | Name of the player this instance controls |
+
+To run several agents in one game, start one MCP instance per agent, each with its own `FACTORIO_PLAYER` (a player connected to the game under that name) and its own `FACTORIO_BUILDINGS_FILE` and `FACTORIO_GOALS_FILE`. Walking and mining state is kept per player, so the instances do not interfere.
 
 ### 3. Build
 
