@@ -89,7 +89,8 @@ builder.Services
                 {
                     // The MCP library would answer only "An error occurred invoking '<tool>'.": give the agent the cause
                     await Console.Error.WriteLineAsync($"[ToolCall] {toolName} failed: {ex}");
-                    return new CallToolResult { Content = [new TextContentBlock { Text = ToolErrors.ToJson(ex) }], IsError = true };
+                    var schema = (context.MatchedPrimitive as McpServerTool)?.ProtocolTool.InputSchema;
+                    return new CallToolResult { Content = [new TextContentBlock { Text = ToolErrors.ToJson(ex, context.Params.Arguments, schema) }], IsError = true };
                 }
 
                 await Console.Error.WriteLineAsync($"[ToolCall] {toolName} completed");

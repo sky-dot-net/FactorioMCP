@@ -17,12 +17,24 @@ public class ToolErrorsTests
     }
 
     [Fact]
-    public void ArgumentException_NamesTheParameter()
+    public void MissingParameter_IsOneCompactLine()
     {
-        var (error, message) = Parse(ToolErrors.ToJson(new ArgumentException("missing a value for the required parameter 'recipe'.", "arguments")));
+        var json = ToolErrors.ToJson(new ArgumentException(
+            "The arguments dictionary is missing a value for the required parameter 'recipe'.", "arguments"));
 
-        Assert.Equal("invalid_argument", error);
-        Assert.Contains("'recipe'", message);
+        Assert.Equal("""{"success":false,"error":"missing_value_for_param: recipe"}""", json);
+    }
+
+    [Fact]
+    public void WrongTypeParameter_IsNamedFromTheSchema()
+    {
+        // Live game: x:"abc" was reported as an unreadable game answer
+        var args = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>("""{"x":"abc","y":0}""");
+        var schema = JsonDocument.Parse("""{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"}}}""").RootElement;
+
+        var json = ToolErrors.ToJson(new JsonException("The JSON value could not be converted to System.Double."), args, schema);
+
+        Assert.Equal("""{"success":false,"error":"invalid_value_for_param: x (number)"}""", json);
     }
 
     [Fact]
@@ -31,6 +43,15 @@ public class ToolErrorsTests
         var (error, _) = Parse(ToolErrors.ToJson(new JsonException("'C' is an invalid start of a value.")));
 
         Assert.Equal("unexpected_game_response", error);
+    }
+
+    [Fact]
+    public void RejectedValue_NamesTheParameterAndKeepsTheHint()
+    {
+        var (error, message) = Parse(ToolErrors.ToJson(new ArgumentException("Invalid inventoryType 'Chest': use fuel, chest.", "inventoryType")));
+
+        Assert.Equal("invalid_value_for_param: inventoryType", error);
+        Assert.Equal("Invalid inventoryType 'Chest': use fuel, chest.", message);
     }
 
     [Fact]
