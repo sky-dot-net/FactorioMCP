@@ -5,281 +5,109 @@ namespace FactorioMCP.Tests.Services;
 
 public class PathfindingServiceTests
 {
-    // ── ProjectOntoSegment ──────────────────────────────────────────
+    // ── Walking: in-game steering, replanning, honest arrival ───────
+
+    private static readonly string TwoPointPath = """{"status":"ok","path":[{"x":5,"y":0},{"x":10,"y":0}]}""";
 
     [Fact]
-    public void ProjectOntoSegment_AtStart_ReturnsZero()
+    public async Task WalkTo_Stuck_PlansANewPathAndArrives()
     {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 0, 0);
-        Assert.Equal(0.0, t, precision: 3);
-    }
+        var rcon = new ScriptedRconClient([
+            """{"x":0,"y":0}""",                          // GetPosition
+            "ok",                                          // EnsurePathHandlerInstalled
+            "1", TwoPointPath, "ok",                       // RequestPath, GetPathResult, StartFollowing
+            """{"x":3,"y":0,"status":"stuck"}""",         // walk state: blocked
+            "2", TwoPointPath, "ok",                       // new path from here
+            """{"x":10,"y":0,"status":"arrived"}""",
+            "ok",                                          // StopWalking
+        ]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
 
-    [Fact]
-    public void ProjectOntoSegment_AtEnd_ReturnsOne()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 10, 0);
-        Assert.Equal(1.0, t, precision: 3);
-    }
+        var result = await pathfinding.WalkToAsync(10, 0, 0.5, 10);
 
-    [Fact]
-    public void ProjectOntoSegment_Midpoint_ReturnsHalf()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 5, 0);
-        Assert.Equal(0.5, t, precision: 3);
+        Assert.Contains("\"status\":\"arrived\"", result);
+        Assert.Equal(2, rcon.AllCommands.Count(c => c.Contains("request_path")));
     }
 
     [Fact]
-    public void ProjectOntoSegment_PastEnd_ReturnsGreaterThanOne()
+    public async Task WalkTo_StuckAfterEveryReplan_ReportsStuck()
     {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 15, 0);
-        Assert.True(t > 1.0);
+        var responses = new List<string> { """{"x":0,"y":0}""", "ok", "1", TwoPointPath, "ok", """{"x":3,"y":0,"status":"stuck"}""" };
+        for (var i = 0; i < PathfindingService.MaxReplans; i++)
+            responses.AddRange(["2", TwoPointPath, "ok", """{"x":3,"y":0,"status":"stuck"}"""]);
+        responses.Add("ok");
+        var rcon = new ScriptedRconClient([.. responses]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
+
+        var result = await pathfinding.WalkToAsync(10, 0, 0.5, 10);
+
+        Assert.Contains("\"status\":\"stuck\"", result);
+        Assert.Equal(1 + PathfindingService.MaxReplans, rcon.AllCommands.Count(c => c.Contains("request_path")));
     }
 
     [Fact]
-    public void ProjectOntoSegment_BeforeStart_ReturnsNegative()
+    public async Task WalkTo_PastThePathEndButOutsideTolerance_IsNotArrived()
     {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, -5, 0);
-        Assert.True(t < 0);
+        // Live game: the old code reported "arrived" 1.79 tiles from the target with tolerance 0.5
+        var rcon = new ScriptedRconClient([
+            """{"x":0,"y":0}""", "ok", "1", TwoPointPath, "ok",
+            """{"x":10.2,"y":1.7,"status":"walking"}""",
+        ]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
+
+        var result = await pathfinding.WalkToAsync(10, 0, 0.5, 0.5);
+
+        Assert.Contains("\"status\":\"timeout\"", result);
     }
 
     [Fact]
-    public void ProjectOntoSegment_PerpendicularOffset_ProjectsCorrectly()
+    public async Task WalkTo_HandlerLostAfterGameReload_InstallsItAgainAndContinues()
     {
-        // Player is at (5, 3) — perpendicular to midpoint of horizontal segment
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 5, 3);
-        Assert.Equal(0.5, t, precision: 3);
+        var rcon = new ScriptedRconClient([
+            """{"x":0,"y":0}""", "ok", "1", TwoPointPath, "ok",
+            """{"x":0,"y":0,"status":"no_handler"}""",
+            "ok", "ok",                                    // EnsurePathHandlerInstalled, StartFollowing
+            """{"x":10,"y":0,"status":"arrived"}""",
+            "ok",
+        ]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
+
+        var result = await pathfinding.WalkToAsync(10, 0, 0.5, 10);
+
+        Assert.Contains("\"status\":\"arrived\"", result);
+        Assert.Equal(2, rcon.AllCommands.Count(c => c.Contains("storage.walk_dirs[game.connected_players[1].index] = nil")));
     }
 
     [Fact]
-    public void ProjectOntoSegment_DiagonalSegment_ProjectsCorrectly()
+    public async Task WalkTo_HandsThePathToTheTickHandler()
     {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 10) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 5, 5);
-        Assert.Equal(0.5, t, precision: 3);
+        var rcon = new ScriptedRconClient([
+            """{"x":0,"y":0}""", "ok", "1", TwoPointPath, "ok",
+            """{"x":10,"y":0,"status":"arrived"}""", "ok",
+        ]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
+
+        await pathfinding.WalkToAsync(10, 0, 0.5, 10);
+
+        // Handlers are installed again after a game reload (they are not saved with the game)
+        Assert.Contains("if not __mcp_walk_handlers then", rcon.AllCommands[2]);
+        Assert.Contains("local pts = {{x=5,y=0},{x=10,y=0}}", rcon.AllCommands[4]);
+        Assert.Contains("storage.walk_paths[p.index] = {points = pts, i = 1, target = target, tolerance = 0.5", rcon.AllCommands[4]);
     }
 
     [Fact]
-    public void ProjectOntoSegment_DegenerateSegment_ReturnOne()
+    public void TickHandler_SteersEveryTickAndDetectsStuck()
     {
-        // Start and end are the same point
-        var waypoints = new List<(double, double)> { (5, 5), (5, 5) };
-        var t = PathfindingService.ProjectOntoSegment(waypoints, 0, 5, 5);
-        Assert.Equal(1.0, t, precision: 3);
+        var handler = FactorioService.LuaOnTickHandler;
+
+        Assert.Contains("for index, w in pairs(storage.walk_paths or {}) do", handler);
+        Assert.Contains("local reach = math.max(0.2, p.character_running_speed + 0.05)", handler);
+        Assert.Contains("if w.idle > 45 then", handler);
+        Assert.Contains("p.walking_state = {walking = true, direction = dir}", handler);
+        // Live game: an agent character kept walking 1.3 tiles past the target until the next RCON poll
+        Assert.Equal(2, handler.Split("p.walking_state = {walking = false, direction = p.walking_state.direction}").Length - 1);
     }
 
-    // ── AdvanceSegment ──────────────────────────────────────────────
-
-    [Fact]
-    public void AdvanceSegment_PlayerBeforeEndpoint_StaysOnSegment()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        var result = PathfindingService.AdvanceSegment(waypoints, 0, 5, 0);
-        Assert.Equal(0, result);
-    }
-
-    [Fact]
-    public void AdvanceSegment_PlayerPastEndpoint_AdvancesToNext()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        var result = PathfindingService.AdvanceSegment(waypoints, 0, 12, 0);
-        Assert.Equal(1, result);
-    }
-
-    [Fact]
-    public void AdvanceSegment_PlayerPastMultipleEndpoints_AdvancesMultiple()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (5, 0), (10, 0), (20, 0) };
-        // Player at x=12 is past both segment 0→1 and 1→2
-        var result = PathfindingService.AdvanceSegment(waypoints, 0, 12, 0);
-        Assert.Equal(2, result);
-    }
-
-    [Fact]
-    public void AdvanceSegment_AtLastSegment_AdvancesToEnd()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0) };
-        // Only one segment (index 0), player past end — segIndex advances to Count-1
-        // which signals "arrived" in FollowWaypointsAsync
-        var result = PathfindingService.AdvanceSegment(waypoints, 0, 15, 0);
-        Assert.Equal(1, result); // waypoints.Count - 1, caller treats as arrived
-    }
-
-    [Fact]
-    public void AdvanceSegment_LShapedPath_AdvancesOnlyPastProjectedSegments()
-    {
-        // L-shaped path: right then down
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (10, 10) };
-        // Player at (12, 0) — past first segment endpoint but projection onto
-        // second segment (vertical) should be at t=0 since player is at start Y
-        var result = PathfindingService.AdvanceSegment(waypoints, 0, 12, 0);
-        Assert.Equal(1, result); // Advanced past first, stays on second
-    }
-
-    [Fact]
-    public void AdvanceSegment_PlayerPerpendicularToSegment_StaysOnSegment()
-    {
-        // Player is off to the side but hasn't passed the endpoint
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        var result = PathfindingService.AdvanceSegment(waypoints, 0, 5, 5);
-        Assert.Equal(0, result); // t = 0.5, hasn't passed endpoint
-    }
-
-    // ── GetPathProgress ─────────────────────────────────────────────
-
-    [Fact]
-    public void GetPathProgress_AtStart_ReturnsZero()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        var progress = PathfindingService.GetPathProgress(waypoints, 0, 0, 0);
-        Assert.Equal(0.0, progress, precision: 2);
-    }
-
-    [Fact]
-    public void GetPathProgress_MidFirstSegment_ReturnsHalfSegmentLength()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        var progress = PathfindingService.GetPathProgress(waypoints, 0, 5, 0);
-        Assert.Equal(5.0, progress, precision: 2);
-    }
-
-    [Fact]
-    public void GetPathProgress_OnSecondSegment_IncludesFirstSegmentLength()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        // On segment 1, at x=15 (midpoint of second segment)
-        var progress = PathfindingService.GetPathProgress(waypoints, 1, 15, 0);
-        Assert.Equal(15.0, progress, precision: 2); // 10 (first seg) + 5 (half of second)
-    }
-
-    [Fact]
-    public void GetPathProgress_ClampsProjectionToSegmentLength()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        // Player past current segment end — projection should be clamped to 1.0
-        var progress = PathfindingService.GetPathProgress(waypoints, 0, 15, 0);
-        Assert.Equal(10.0, progress, precision: 2); // Clamped to full first segment
-    }
-
-    [Fact]
-    public void GetPathProgress_ClampsNegativeProjection()
-    {
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (20, 0) };
-        // Player before segment start
-        var progress = PathfindingService.GetPathProgress(waypoints, 0, -5, 0);
-        Assert.Equal(0.0, progress, precision: 2); // Clamped to 0
-    }
-
-    [Fact]
-    public void GetPathProgress_MultiSegmentPath_AccumulatesCorrectly()
-    {
-        // 3 segments of length 10 each
-        var waypoints = new List<(double, double)> { (0, 0), (10, 0), (10, 10), (0, 10) };
-        // On third segment (index 2), at midpoint (5, 10)
-        var progress = PathfindingService.GetPathProgress(waypoints, 2, 5, 10);
-        Assert.Equal(25.0, progress, precision: 2); // 10 + 10 + 5
-    }
-
-    // ── CalculateDirection ──────────────────────────────────────────
-
-    [Theory]
-    [InlineData(0, 0, 0, -10, 0)]  // North
-    [InlineData(0, 0, 10, -10, 2)]  // NE
-    [InlineData(0, 0, 10, 0, 4)]   // East
-    [InlineData(0, 0, 10, 10, 6)]  // SE
-    [InlineData(0, 0, 0, 10, 8)]   // South
-    [InlineData(0, 0, -10, 10, 10)] // SW
-    [InlineData(0, 0, -10, 0, 12)] // West
-    [InlineData(0, 0, -10, -10, 14)] // NW
-    public void CalculateDirection_ReturnsCorrectFactorio2Direction(
-        double fromX, double fromY, double toX, double toY, int expected)
-    {
-        var result = PathfindingService.CalculateDirection(fromX, fromY, toX, toY);
-        Assert.Equal(expected, result);
-    }
-
-    [Fact]
-    public void CalculateDirection_SmallDxDominantDy_ReturnsCardinal()
-    {
-        // Nearly vertical — should be North, not NE
-        var result = PathfindingService.CalculateDirection(0, 0, 0.1, -10);
-        Assert.Equal(0, result); // North
-    }
-
-    [Fact]
-    public void CalculateDirection_SmallDyDominantDx_ReturnsCardinal()
-    {
-        // Nearly horizontal — should be East, not NE
-        var result = PathfindingService.CalculateDirection(0, 0, 10, 0.1);
-        Assert.Equal(4, result); // East
-    }
-
-    // ── CalculateDirection Hysteresis ────────────────────────────────
-
-    [Fact]
-    public void CalculateDirection_CardinalWithSlightDrift_StaysCardinal()
-    {
-        // Walking North, slight drift east — ratio ady/adx ≈ 2.38 (just under standard 2.414)
-        // Without hysteresis this would switch to NE, but with previous=North it stays North
-        var result = PathfindingService.CalculateDirection(0, 0, 0.42, -1, previousDirection: 0);
-        Assert.Equal(0, result); // Stays North
-    }
-
-    [Fact]
-    public void CalculateDirection_CardinalWithLargeDrift_Switches()
-    {
-        // Walking North, large drift east — angle clearly in NE territory (past dead zone)
-        // ady/adx = 1.0/0.6 ≈ 1.67, below hysteresis threshold 1.732 → switches to NE
-        var result = PathfindingService.CalculateDirection(0, 0, 0.6, -1, previousDirection: 0);
-        Assert.Equal(2, result); // Switches to NE
-    }
-
-    [Fact]
-    public void CalculateDirection_DiagonalWithSlightDriftToCardinal_StaysDiagonal()
-    {
-        // Walking NE, slight drift toward North — ratio ady/adx ≈ 3.33 (just over standard 2.414)
-        // Without hysteresis this would switch to N, but with previous=NE it stays NE
-        var result = PathfindingService.CalculateDirection(0, 0, 3, -10, previousDirection: 2);
-        Assert.Equal(2, result); // Stays NE
-    }
-
-    [Fact]
-    public void CalculateDirection_DiagonalWithLargeDriftToCardinal_Switches()
-    {
-        // Walking NE, large drift toward North — angle clearly in N territory (past dead zone)
-        // ady/adx = 10/2.5 = 4.0 > hysteresis threshold 3.732 → switches to North
-        var result = PathfindingService.CalculateDirection(0, 0, 2.5, -10, previousDirection: 2);
-        Assert.Equal(0, result); // Switches to North
-    }
-
-    [Fact]
-    public void CalculateDirection_NoPreviousDirection_NoHysteresis()
-    {
-        // Without previousDirection, standard threshold applies — ratio 2.38 → NE
-        var result = PathfindingService.CalculateDirection(0, 0, 0.42, -1, previousDirection: null);
-        Assert.Equal(2, result); // NE (no hysteresis)
-    }
-
-    [Fact]
-    public void CalculateDirection_SameAsPrevious_ReturnsSame()
-    {
-        // Clear North direction with previous=North — trivially returns same
-        var result = PathfindingService.CalculateDirection(0, 0, 0, -10, previousDirection: 0);
-        Assert.Equal(0, result); // North
-    }
-
-    [Fact]
-    public void CalculateDirection_OppositeDirection_SwitchesImmediately()
-    {
-        // Walking North, now heading South — opposite direction, no dead zone prevents this
-        var result = PathfindingService.CalculateDirection(0, 0, 0, 10, previousDirection: 0);
-        Assert.Equal(8, result); // South
-    }
 
     // ── ParsePosition ───────────────────────────────────────────────
 

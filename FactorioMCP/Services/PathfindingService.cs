@@ -6,32 +6,34 @@ using FactorioMCP.Rcon;
 namespace FactorioMCP.Services;
 
 /// <summary>
-/// Pathfinding service using Factorio's A* pathfinder with C#-driven waypoint following.
-/// 
-/// Design: All navigation logic runs in C#, with Lua only used for:
-///   1. Requesting paths (async via request_path)
-///   2. Receiving path results (minimal event handler)
-///   3. Continuous walking via on_tick handler (Factorio 2 resets walking_state each tick)
-/// 
-/// In Factorio 2, walking_state only persists for a single tick, so a Lua on_tick handler
-/// must re-apply the walking direction every tick. C# controls the direction by writing
-/// to storage.walk_dirs[player index], and the on_tick handler reads it to keep the player moving.
+/// Pathfinding service using Factorio's A* pathfinder with in-game waypoint following.
+///
+/// Design:
+///   1. C# requests a path (async via request_path) and receives it from a minimal event handler.
+///   2. C# hands the path to <c>storage.walk_paths[player index]</c>; the shared on_tick handler
+///      (<see cref="FactorioService.LuaOnTickHandler"/>) steers the character along it every tick, so steering
+///      never lags behind RCON round trips. It marks the walk arrived (within tolerance of the target)
+///      or stuck (no progress toward the current waypoint for 45 ticks).
+///   3. C# polls the walk state, plans a new path from the current position when the walk is stuck,
+///      and reports the result.
 /// </summary>
 internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? restrictedArea = null)
 {
     /// <summary>
-    /// Poll interval for position checks during walking. Can be overridden in tests.
+    /// Poll interval for the walk state during walking. Can be overridden in tests.
     /// </summary>
-    internal TimeSpan PollInterval { get; set; } = TimeSpan.FromMilliseconds(25);
+    internal TimeSpan PollInterval { get; set; } = TimeSpan.FromMilliseconds(100);
+
+    /// <summary>New paths planned from the current position when a walk gets stuck, before reporting stuck.</summary>
+    internal const int MaxReplans = 2;
 
     private bool _pathHandlerInstalled;
-    private int? _lastDirection;
 
     // ── Public API ──────────────────────────────────────────────────
 
     /// <summary>
     /// Walk to a target position using Factorio's A* pathfinder.
-    /// Returns a structured JSON result with status (arrived/stuck/timeout/no_path/restricted_area),
+    /// Returns a structured JSON result with status (arrived/stuck/timeout/no_path/interrupted/restricted_area),
     /// final position, and distance. A walk that the restricted area blocked carries a restricted_area_note.
     /// </summary>
     public async Task<string> WalkToAsync(
@@ -66,44 +68,11 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
         // Ensure path handler is installed (once per session)
         await EnsurePathHandlerInstalledAsync(cancellationToken);
 
-        // Request path from Factorio's A* pathfinder
-        var requestId = await RequestPathAsync(targetX, targetY, tolerance, cancellationToken);
-        if (requestId < 0)
-            return FormatResult("no_character", px, py, targetX, targetY, dist, tolerance);
+        var (pathStatus, waypoints) = await FindPathAsync(targetX, targetY, tolerance, cancellationToken);
+        if (waypoints is null)
+            return FormatResult(pathStatus, px, py, targetX, targetY, dist, tolerance);
 
-        // Wait for path computation (usually 1-2 game ticks)
-        List<(double x, double y)>? waypoints = null;
-        for (int i = 0; i < 20 && waypoints is null; i++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
-            var (status, path) = await GetPathResultAsync(requestId, cancellationToken);
-
-            if (status == "ok" && path is not null)
-            {
-                waypoints = path;
-                break;
-            }
-            if (status == "no_path")
-                return FormatResult("no_path", px, py, targetX, targetY, dist, tolerance);
-            if (status == "busy")
-            {
-                // Pathfinder overloaded — old request already cleaned up by
-                // GetPathResultAsync (non-ok entries are nil'd), just retry
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
-                requestId = await RequestPathAsync(targetX, targetY, tolerance, cancellationToken);
-                if (requestId < 0)
-                    return FormatResult("no_character", px, py, targetX, targetY, dist, tolerance);
-            }
-        }
-
-        if (waypoints is null || waypoints.Count == 0)
-            return FormatResult("no_path", px, py, targetX, targetY, dist, tolerance);
-
-        // Draw debug visualization
-        await DrawPathAsync(waypoints, tolerance, cancellationToken);
-
-        // Follow waypoints from C#
-        return await FollowWaypointsAsync(waypoints, targetX, targetY, tolerance, deadline, cancellationToken);
+        return await FollowPathAsync(waypoints, targetX, targetY, tolerance, deadline, cancellationToken);
     }
 
     /// <summary>
@@ -117,21 +86,56 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
             """, cancellationToken);
     }
 
-    // ── Waypoint Following (Segment-Vector Projection Model) ──────────
+    // ── Path planning and following ─────────────────────────────────
 
-    private async Task<string> FollowWaypointsAsync(
+    /// <summary>
+    /// Request a path from the current position and wait for it.
+    /// Returns ("ok", waypoints), or (status, null) with status no_path or no_character.
+    /// </summary>
+    private async Task<(string Status, List<(double x, double y)>? Waypoints)> FindPathAsync(
+        double targetX, double targetY, double tolerance, CancellationToken cancellationToken)
+    {
+        var requestId = await RequestPathAsync(targetX, targetY, tolerance, cancellationToken);
+        if (requestId < 0)
+            return ("no_character", null);
+
+        // Wait for path computation (usually 1-2 game ticks)
+        for (int i = 0; i < 20; i++)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
+            var (status, path) = await GetPathResultAsync(requestId, cancellationToken);
+
+            if (status == "ok" && path is { Count: > 0 })
+                return ("ok", path);
+            if (status == "no_path")
+                return ("no_path", null);
+            if (status == "busy")
+            {
+                // Pathfinder overloaded — old request already cleaned up by
+                // GetPathResultAsync (non-ok entries are nil'd), just retry
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                requestId = await RequestPathAsync(targetX, targetY, tolerance, cancellationToken);
+                if (requestId < 0)
+                    return ("no_character", null);
+            }
+        }
+
+        return ("no_path", null);
+    }
+
+    /// <summary>
+    /// Let the on_tick handler walk the path, poll its state, and plan a new path when it is stuck.
+    /// "arrived" is reported only within <paramref name="tolerance"/> of the target.
+    /// </summary>
+    private async Task<string> FollowPathAsync(
         List<(double x, double y)> waypoints,
         double targetX, double targetY,
         double tolerance,
         DateTime deadline,
         CancellationToken cancellationToken)
     {
-        // Segment index: player walks from waypoints[segIndex] toward waypoints[segIndex+1].
-        // When projection along the segment passes the endpoint, advance to next segment.
-        int segIndex = 0;
-        double bestProgress = 0; // cumulative distance along path (for stuck detection)
-        int stuckCount = 0;
-        const int maxStuckCount = 60; // ~3 seconds at 50ms poll
+        await StartFollowingAsync(waypoints, targetX, targetY, tolerance, cancellationToken);
+        var replans = 0;
 
         try
         {
@@ -139,50 +143,51 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var (px, py) = await GetPositionAsync(cancellationToken);
-
-                // Check if we've reached the final destination
+                var (px, py, status) = await GetWalkStateAsync(cancellationToken);
                 var dist = Distance(px, py, targetX, targetY);
+
                 if (dist <= tolerance)
                 {
                     await StopWalkingAsync(cancellationToken);
                     return FormatResult("arrived", px, py, targetX, targetY, dist, tolerance);
                 }
 
-                // Advance segments using projection
-                segIndex = AdvanceSegment(waypoints, segIndex, px, py);
-
-                // Past last segment — arrived (close enough to final waypoint)
-                if (segIndex >= waypoints.Count - 1)
+                switch (status)
                 {
-                    await StopWalkingAsync(cancellationToken);
-                    return FormatResult("arrived", px, py, targetX, targetY, dist, tolerance);
-                }
+                    case "no_handler":
+                        // The game was reloaded (script handlers are not saved): install them again and go on
+                        _pathHandlerInstalled = false;
+                        await EnsurePathHandlerInstalledAsync(cancellationToken);
+                        await StartFollowingAsync(waypoints, targetX, targetY, tolerance, cancellationToken);
+                        break;
 
-                // Stuck detection: measure progress along the path, not toward the goal.
-                // Progress = sum of completed segment lengths + projection on current segment.
-                var progress = GetPathProgress(waypoints, segIndex, px, py);
-                if (progress > bestProgress + 0.1)
-                {
-                    bestProgress = progress;
-                    stuckCount = 0;
-                }
-                else
-                {
-                    stuckCount++;
-                }
+                    case "none":
+                        // Another command stopped this walk
+                        await StopWalkingAsync(cancellationToken);
+                        return FormatResult("interrupted", px, py, targetX, targetY, dist, tolerance);
 
-                if (stuckCount > maxStuckCount)
-                {
-                    await StopWalkingAsync(cancellationToken);
-                    return FormatResult("stuck", px, py, targetX, targetY, dist, tolerance);
-                }
+                    case "no_character":
+                        await StopWalkingAsync(cancellationToken);
+                        return FormatResult("no_character", px, py, targetX, targetY, dist, tolerance);
 
-                // Steer toward the endpoint of the current segment
-                var (wpx, wpy) = waypoints[segIndex + 1];
-                var direction = CalculateDirection(px, py, wpx, wpy, _lastDirection);
-                if (_lastDirection != direction)
-                    await SetWalkingDirectionAsync(direction, cancellationToken);
+                    case "stuck" or "arrived":
+                        // "arrived" while outside the tolerance: the path ended short of the target
+                        if (replans >= MaxReplans)
+                        {
+                            await StopWalkingAsync(cancellationToken);
+                            return FormatResult("stuck", px, py, targetX, targetY, dist, tolerance);
+                        }
+                        replans++;
+                        var (pathStatus, path) = await FindPathAsync(targetX, targetY, tolerance, cancellationToken);
+                        if (path is null)
+                        {
+                            await StopWalkingAsync(cancellationToken);
+                            return FormatResult(pathStatus == "no_path" ? "stuck" : pathStatus, px, py, targetX, targetY, dist, tolerance);
+                        }
+                        waypoints = path;
+                        await StartFollowingAsync(waypoints, targetX, targetY, tolerance, cancellationToken);
+                        break;
+                }
 
                 await Task.Delay(PollInterval, cancellationToken);
             }
@@ -200,168 +205,40 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
         return FormatResult("timeout", finalX, finalY, targetX, targetY, finalDist, tolerance);
     }
 
-    /// <summary>
-    /// Advance the segment index by projecting the player position onto the current segment vector.
-    /// When the projection parameter t >= 1.0 (player has passed the segment endpoint),
-    /// advance to the next segment. Only advances one segment at a time to maintain path fidelity
-    /// and avoid skipping obstacle-avoidance waypoints.
-    /// </summary>
-    internal static int AdvanceSegment(
-        List<(double x, double y)> waypoints, int segIndex,
-        double playerX, double playerY)
-    {
-        while (segIndex < waypoints.Count - 1)
-        {
-            var t = ProjectOntoSegment(waypoints, segIndex, playerX, playerY);
-
-            // Player hasn't passed the segment endpoint yet — stay on this segment
-            if (t < 1.0)
-                break;
-
-            segIndex++;
-        }
-
-        return segIndex;
-    }
-
-    /// <summary>
-    /// Calculate cumulative progress along the path in tiles.
-    /// Sum of completed segment lengths + clamped projection on current segment.
-    /// Used for stuck detection: if this value stops increasing, the player is stuck.
-    /// </summary>
-    internal static double GetPathProgress(
-        List<(double x, double y)> waypoints, int segIndex,
-        double playerX, double playerY)
-    {
-        double progress = 0;
-
-        // Sum completed segments
-        for (int i = 0; i < segIndex && i < waypoints.Count - 1; i++)
-        {
-            var (ax, ay) = waypoints[i];
-            var (bx, by) = waypoints[i + 1];
-            progress += Distance(ax, ay, bx, by);
-        }
-
-        // Add projection on current segment (clamped to [0, segLen])
-        if (segIndex < waypoints.Count - 1)
-        {
-            var (sx, sy) = waypoints[segIndex];
-            var (ex, ey) = waypoints[segIndex + 1];
-            var segLen = Distance(sx, sy, ex, ey);
-
-            if (segLen > 0.001)
-            {
-                var t = ProjectOntoSegment(waypoints, segIndex, playerX, playerY);
-                progress += Math.Clamp(t, 0, 1) * segLen;
-            }
-        }
-
-        return progress;
-    }
-
-    /// <summary>
-    /// Project the player position onto a path segment, returning the parameter t.
-    /// t=0 means at segment start, t=1 means at segment end, t>1 means past the endpoint.
-    /// Uses the standard vector projection formula: t = dot(player-start, end-start) / |end-start|².
-    /// </summary>
-    internal static double ProjectOntoSegment(
-        List<(double x, double y)> waypoints, int segIndex,
-        double playerX, double playerY)
-    {
-        var (sx, sy) = waypoints[segIndex];
-        var (ex, ey) = waypoints[segIndex + 1];
-        var segX = ex - sx;
-        var segY = ey - sy;
-        var segLenSq = segX * segX + segY * segY;
-
-        if (segLenSq < 0.001)
-            return 1.0; // degenerate segment, treat as passed
-
-        var toPlayerX = playerX - sx;
-        var toPlayerY = playerY - sy;
-        return (segX * toPlayerX + segY * toPlayerY) / segLenSq;
-    }
-
-    /// <summary>
-    /// Calculate Factorio 2 direction (0-15, even values for 8 cardinals+diagonals) with optional
-    /// hysteresis to prevent oscillation at sector boundaries during straight-line movement.
-    /// Factorio 2 uses 16 directions: 0=N 2=NE 4=E 6=SE 8=S 10=SW 12=W 14=NW
-    /// (odd values are intermediate directions like NNE=1, ENE=3, etc.)
-    ///
-    /// When <paramref name="previousDirection"/> is provided, a dead zone (~7.5°) around each
-    /// sector boundary prevents direction changes from small lateral drift. The direction only
-    /// switches when the angle moves clearly past the boundary.
-    /// </summary>
-    internal static int CalculateDirection(double fromX, double fromY, double toX, double toY, int? previousDirection = null)
-    {
-        var dx = toX - fromX;
-        var dy = toY - fromY;
-        var adx = Math.Abs(dx);
-        var ady = Math.Abs(dy);
-
-        const double threshold = 2.414; // tan(67.5°) — standard sector boundary
-
-        var newDirection = ComputeOctant(dx, dy, adx, ady, threshold);
-
-        if (previousDirection is not { } prev || newDirection == prev)
-            return newDirection;
-
-        // Apply hysteresis: require the angle to move further past the boundary before switching.
-        // Cardinal directions (N/E/S/W) use a relaxed threshold making it harder to leave cardinal.
-        // Diagonal directions (NE/SE/SW/NW) use a strict threshold making it harder to leave diagonal.
-        var hysteresisThreshold = prev % 4 == 0
-            ? 1.732  // tan(60°) — ~7.5° dead zone keeping cardinal
-            : 3.732; // tan(75°) — ~7.5° dead zone keeping diagonal
-
-        var hysteresisDirection = ComputeOctant(dx, dy, adx, ady, hysteresisThreshold);
-        return hysteresisDirection == prev ? prev : newDirection;
-    }
-
-    /// <summary>
-    /// Map a direction vector to one of 8 octant directions using the given cardinal/diagonal threshold.
-    /// Higher threshold = narrower cardinal zones (harder to be cardinal, easier to be diagonal).
-    /// </summary>
-    private static int ComputeOctant(double dx, double dy, double adx, double ady, double threshold)
-    {
-        if (ady > adx * threshold)
-            return dy < 0 ? 0 : 8; // North or South
-
-        if (adx > ady * threshold)
-            return dx > 0 ? 4 : 12; // East or West
-
-        // Diagonal
-        if (dx > 0)
-            return dy < 0 ? 2 : 6; // NE or SE
-
-        return dy < 0 ? 14 : 10; // NW or SW
-    }
-
     // ── Lua Commands ────────────────────────────────────────────────
 
     /// <summary>
+    /// Install the path result handler and the shared on_tick handler. Script handlers are not saved with the game,
+    /// so <c>__mcp_walk_handlers</c> (a Lua global, also lost on reload) tells whether they are installed.
+    /// </summary>
+    private const string LuaInstallWalkHandlers = $$"""
+        storage.nav_results = storage.nav_results or {}
+        script.on_event(defines.events.on_script_path_request_finished, function(event)
+            if event.path and #event.path > 0 then
+                storage.nav_results[event.id] = {status = "ok", path = event.path, tick = game.tick}
+            elseif event.try_again_later then
+                storage.nav_results[event.id] = {status = "busy", tick = game.tick}
+            else
+                storage.nav_results[event.id] = {status = "no_path", tick = game.tick}
+            end
+        end)
+        {{FactorioService.LuaOnTickHandler}}
+        __mcp_walk_handlers = true
+        """;
+
+    /// <summary>
     /// Install the path result handler and shared on_tick handler once per session.
-    /// The on_tick handler continuously re-applies walking_state because Factorio 2
-    /// resets it every tick — a single set only moves the player for one tick.
+    /// The on_tick handler steers the character along its path every tick because Factorio 2
+    /// resets walking_state every tick — a single set only moves the player for one tick.
     /// </summary>
     private async Task EnsurePathHandlerInstalledAsync(CancellationToken cancellationToken)
     {
         if (_pathHandlerInstalled) return;
 
         await rcon.ExecuteLuaAsync($$"""
-            storage.nav_results = storage.nav_results or {}
             storage.walk_dirs = storage.walk_dirs or {}
             storage.walk_dirs[game.connected_players[1].index] = nil
-            script.on_event(defines.events.on_script_path_request_finished, function(event)
-                if event.path and #event.path > 0 then
-                    storage.nav_results[event.id] = {status = "ok", path = event.path, tick = game.tick}
-                elseif event.try_again_later then
-                    storage.nav_results[event.id] = {status = "busy", tick = game.tick}
-                else
-                    storage.nav_results[event.id] = {status = "no_path", tick = game.tick}
-                end
-            end)
-            {{FactorioService.LuaOnTickHandler}}
+            {{LuaInstallWalkHandlers}}
             rcon.print('ok')
             """, cancellationToken);
 
@@ -369,13 +246,16 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
     }
 
     /// <summary>
-    /// Request a path from Factorio's A* pathfinder.
+    /// Request a path from Factorio's A* pathfinder. Installs the handlers again when the game was reloaded since.
     /// </summary>
     private async Task<int> RequestPathAsync(
         double targetX, double targetY, double tolerance,
         CancellationToken cancellationToken)
     {
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
+            if not __mcp_walk_handlers then
+                {{LuaInstallWalkHandlers}}
+            end
             local p = game.connected_players[1]
             if not p.character or not p.character.valid then
                 rcon.print('-1')
@@ -453,61 +333,70 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
         return ParsePosition(json);
     }
 
+    /// <summary>
+    /// Position and walk status (walking, arrived, stuck, no_character; none when no walk is set; no_handler when the on_tick
+    /// handler has not run for half a second while the game runs).
+    /// </summary>
+    private async Task<(double x, double y, string status)> GetWalkStateAsync(CancellationToken cancellationToken)
+    {
+        var json = await rcon.ExecuteLuaAsync("""
+            local p = game.connected_players[1]
+            local pos = p.position
+            local w = storage.walk_paths and storage.walk_paths[p.index]
+            local status = w and w.status or "none"
+            if status == "walking" and game.tick - (w.seen or 0) > 30 then status = "no_handler" end
+            rcon.print('{"x":'..pos.x..',"y":'..pos.y..',"status":"'..status..'"}')
+            """, cancellationToken);
+
+        var (x, y) = ParsePosition(json);
+        using var doc = JsonDocument.Parse(json);
+        var status = doc.RootElement.TryGetProperty("status", out var s) ? s.GetString() ?? "walking" : "walking";
+        return (x, y, status);
+    }
+
     private async Task StopWalkingAsync(CancellationToken cancellationToken)
     {
-        _lastDirection = null;
         await rcon.ExecuteLuaAsync("""
             local p = game.connected_players[1]
             if storage.walk_dirs then storage.walk_dirs[p.index] = nil end
+            if storage.walk_paths then storage.walk_paths[p.index] = nil end
             p.walking_state = {walking = false, direction = defines.direction.north}
             rcon.print('ok')
             """, cancellationToken);
     }
 
-    private async Task SetWalkingDirectionAsync(int direction, CancellationToken cancellationToken)
-    {
-        _lastDirection = direction;
-        await rcon.ExecuteLuaAsync(string.Create(CultureInfo.InvariantCulture, $$"""
-            storage.walk_dirs = storage.walk_dirs or {}
-            storage.walk_dirs[game.connected_players[1].index] = {{direction}}
-            rcon.print('ok')
-            """), cancellationToken);
-    }
-
     /// <summary>
-    /// Draw debug path visualization on the game map.
-    /// Draws lines from the player's current position through all waypoints,
-    /// plus a circle at the final waypoint showing the arrival tolerance.
+    /// Hand the path to the on_tick handler (<c>storage.walk_paths</c>) and draw it on the map:
+    /// lines from the player's current position through all waypoints, plus a circle around the target
+    /// showing the arrival tolerance.
     /// </summary>
-    private Task DrawPathAsync(List<(double x, double y)> waypoints, double tolerance, CancellationToken cancellationToken)
+    private Task StartFollowingAsync(
+        List<(double x, double y)> waypoints, double targetX, double targetY, double tolerance,
+        CancellationToken cancellationToken)
     {
-        if (waypoints.Count == 0)
-            return Task.CompletedTask;
+        var points = string.Join(",", waypoints.Select(w =>
+            string.Create(CultureInfo.InvariantCulture, $"{{x={w.x},y={w.y}}}")));
 
         var lua = new StringBuilder();
         lua.Append("local p = game.connected_players[1]\n");
         lua.Append("local s = p.surface\n");
-
-        // Draw first segment from the player's actual position to the first waypoint
-        var (wx0, wy0) = waypoints[0];
-        lua.AppendFormat(CultureInfo.InvariantCulture,
-            "rendering.draw_line{{color={{0,1,0.3,0.7}},width=2,from=p.position,to={{{0},{1}}},surface=s,time_to_live=1800,draw_on_ground=true}}\n",
-            wx0, wy0);
-
-        // Draw remaining segments between waypoints
-        for (int i = 0; i < waypoints.Count - 1; i++)
-        {
-            var (x1, y1) = waypoints[i];
-            var (x2, y2) = waypoints[i + 1];
-            lua.AppendFormat(CultureInfo.InvariantCulture,
-                "rendering.draw_line{{color={{0,1,0.3,0.7}},width=2,from={{{0},{1}}},to={{{2},{3}}},surface=s,time_to_live=1800,draw_on_ground=true}}\n",
-                x1, y1, x2, y2);
-        }
-
-        var (lastX, lastY) = waypoints[^1];
-        lua.AppendFormat(CultureInfo.InvariantCulture,
-            "rendering.draw_circle{{color={{0,1,0,0.5}},radius={0},filled=false,width=2,target={{{1},{2}}},surface=s,time_to_live=1800,draw_on_ground=true}}\n",
-            tolerance, lastX, lastY);
+        lua.Append(CultureInfo.InvariantCulture, $"local pts = {{{points}}}\n");
+        lua.Append(CultureInfo.InvariantCulture, $"local target = {{x={targetX},y={targetY}}}\n");
+        lua.Append("""
+            local from = p.position
+            for _, wp in ipairs(pts) do
+                rendering.draw_line{color={0,1,0.3,0.7},width=2,from=from,to=wp,surface=s,time_to_live=1800,draw_on_ground=true}
+                from = wp
+            end
+            """);
+        lua.Append('\n');
+        lua.Append(CultureInfo.InvariantCulture,
+            $"rendering.draw_circle{{color={{0,1,0,0.5}},radius={tolerance},filled=false,width=2,target=target,surface=s,time_to_live=1800,draw_on_ground=true}}\n");
+        lua.Append("storage.walk_dirs = storage.walk_dirs or {}\n");
+        lua.Append("storage.walk_dirs[p.index] = nil\n");
+        lua.Append("storage.walk_paths = storage.walk_paths or {}\n");
+        lua.Append(CultureInfo.InvariantCulture,
+            $"storage.walk_paths[p.index] = {{points = pts, i = 1, target = target, tolerance = {tolerance}, idle = 0, status = \"walking\", seen = game.tick}}\n");
         lua.Append("rcon.print('ok')");
 
         return rcon.ExecuteLuaAsync(lua.ToString(), cancellationToken);
