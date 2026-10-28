@@ -129,16 +129,14 @@ public class BlueprintServiceTests
     }
 
     [Fact]
-    public async Task PlaceBlueprintStringAsync_ClearsCursorBeforeAndAfter()
+    public async Task PlaceBlueprintStringAsync_UsesScriptInventoryNotCursor()
     {
         await _service.PlaceBlueprintStringAsync("0eNqFake", 10, 20);
 
-        // Should clear cursor at start and after building
         var cmd = _rcon.LastCommand!;
-        var firstClear = cmd.IndexOf("clear_cursor()");
-        var lastClear = cmd.LastIndexOf("clear_cursor()");
-        Assert.True(firstClear >= 0);
-        Assert.True(lastClear > firstClear, "Should clear cursor at least twice (before import and after build)");
+        Assert.Contains("game.create_inventory(1)", cmd);
+        Assert.Contains("inv.destroy()", cmd);
+        Assert.DoesNotContain("cursor", cmd);
     }
 
     [Fact]
@@ -150,11 +148,13 @@ public class BlueprintServiceTests
     }
 
     [Fact]
-    public async Task PlaceBlueprintStringAsync_BuildsFromCursor()
+    public async Task PlaceBlueprintStringAsync_BuildsBlueprintAndReportsGhostCount()
     {
         await _service.PlaceBlueprintStringAsync("0eNqFake", 10, 20);
 
-        Assert.Contains("build_from_cursor", _rcon.LastCommand!);
+        Assert.Contains("stack.build_blueprint{surface=surface, force=player.force", _rcon.LastCommand!);
+        Assert.Contains("ghosts_placed", _rcon.LastCommand!);
+        Assert.Contains("nothing_placed", _rcon.LastCommand!);
     }
 
     [Fact]
@@ -381,11 +381,12 @@ public class BlueprintServiceTests
     }
 
     [Fact]
-    public async Task CreateBlueprintFromAreaAsync_ClearsCursor()
+    public async Task CreateBlueprintFromAreaAsync_UsesScriptInventory()
     {
         await _service.CreateBlueprintFromAreaAsync(-10, -10, 10, 10);
 
-        Assert.Contains("clear_cursor", _rcon.LastCommand!);
+        Assert.Contains("game.create_inventory(1)", _rcon.LastCommand!);
+        Assert.DoesNotContain("cursor", _rcon.LastCommand!);
     }
 
     [Fact]

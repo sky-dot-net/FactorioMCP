@@ -106,7 +106,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
     /// <summary>
     /// Lua prelude for agent mode. <c>__agent()</c> returns a proxy for the agent's character: it creates the
     /// character near spawn on first use, forwards every LuaControl member to it, and supplies the few
-    /// LuaPlayer-only members the services use (<c>character</c>, <c>index</c>, <c>connected</c>, <c>name</c>,
+    /// LuaPlayer-only members agent Lua may use (<c>character</c>, <c>index</c>, <c>connected</c>, <c>name</c>,
     /// <c>clear_cursor</c>). The index is negative so it never collides with real player indices; the on_tick
     /// handler resolves negative indices through <c>storage.agent_chars</c>.
     /// </summary>
@@ -132,9 +132,6 @@ internal class RconClient : IAsyncDisposable, IDisposable
                     if k == "name" then return "{{agentName}}" end
                     if k == "clear_cursor" then
                         return function() if c.cursor_stack then c.cursor_stack.clear() end end
-                    end
-                    if k == "build_from_cursor" then
-                        return function() error("build_from_cursor needs a real player; use place_ghost_batch and construction robots") end
                     end
                     return c[k]
                 end,

@@ -101,9 +101,9 @@ internal sealed class BlueprintService(RconClient rcon)
     }
 
     /// <summary>
-    /// Build a blueprint string at the given position. Imports the blueprint string into
-    /// the player's cursor stack, builds it, then clears the cursor.
-    /// Uses <c>import_stack</c> + <c>build_from_cursor</c> for RCON-compatible placement.
+    /// Build a blueprint string at the given position as ghosts. Imports the string into a
+    /// temporary script inventory and calls <c>build_blueprint</c> on it, so no player cursor is
+    /// needed and agent characters can use it. Reports how many ghosts were placed.
     /// </summary>
     public Task<string> PlaceBlueprintStringAsync(
         string blueprintString,
@@ -124,22 +124,27 @@ internal sealed class BlueprintService(RconClient rcon)
             local pos = {{{x}}, {{y}}}
             local dir = defines.direction.{{direction}}
             local build_mode = defines.build_mode.{{buildMode}}
-            player.clear_cursor()
-            local stack = player.cursor_stack
-            if not stack then
-                rcon.print('{"success":false,"error":"no_cursor_stack"}')
-                return
-            end
+            local inv = game.create_inventory(1)
+            local stack = inv[1]
             stack.set_stack("blueprint")
             local import_result = stack.import_stack('{{escapedBlueprint}}')
             if import_result == 1 then
-                player.clear_cursor()
+                inv.destroy()
                 rcon.print('{"success":false,"error":"invalid_blueprint_string"}')
                 return
             end
-            player.build_from_cursor{position=pos, direction=dir, build_mode=build_mode}
-            player.clear_cursor()
-            rcon.print('{"success":true,"x":'..pos[1]..',"y":'..pos[2]..',"import_warnings":'..import_result..'}')
+            if not stack.is_blueprint then
+                inv.destroy()
+                rcon.print('{"success":false,"error":"not_a_single_blueprint","message":"Decode the book and place one of its blueprints"}')
+                return
+            end
+            local ghosts = stack.build_blueprint{surface=surface, force=player.force, position=pos, direction=dir, build_mode=build_mode}
+            inv.destroy()
+            if #ghosts == 0 then
+                rcon.print('{"success":false,"error":"nothing_placed","message":"No ghost could be placed: the area is blocked or the position is wrong","x":'..pos[1]..',"y":'..pos[2]..'}')
+                return
+            end
+            rcon.print('{"success":true,"ghosts_placed":'..#ghosts..',"x":'..pos[1]..',"y":'..pos[2]..',"import_warnings":'..import_result..'}')
             """);
 
         return rcon.ExecuteLuaAsync(lua, cancellationToken);
@@ -181,8 +186,8 @@ internal sealed class BlueprintService(RconClient rcon)
 
     /// <summary>
     /// Capture entities in a rectangular area as a blueprint string.
-    /// Creates a temporary blueprint in the player's cursor, captures entities,
-    /// exports the string, then clears the cursor.
+    /// Creates a temporary blueprint in a script inventory (no player cursor needed),
+    /// captures entities and exports the string.
     /// </summary>
     public Task<string> CreateBlueprintFromAreaAsync(
         double x1,
@@ -199,22 +204,18 @@ internal sealed class BlueprintService(RconClient rcon)
             local player = game.connected_players[1]
             local surface = player.surface
             local area = {{areaExpr}}
-            player.clear_cursor()
-            local stack = player.cursor_stack
-            if not stack then
-                rcon.print('{"success":false,"error":"no_cursor_stack"}')
-                return
-            end
+            local inv = game.create_inventory(1)
+            local stack = inv[1]
             stack.set_stack("blueprint")
             local mapping = stack.create_blueprint{surface=surface, force=player.force, area=area, always_include_tiles={{tilesFlag}}}
             if not stack.is_blueprint_setup() then
-                player.clear_cursor()
+                inv.destroy()
                 rcon.print('{"success":false,"error":"no_entities_in_area","x1":{{x1}},"y1":{{y1}},"x2":{{x2}},"y2":{{y2}}}')
                 return
             end
             local bp_string = stack.export_stack()
             local entity_count = stack.get_blueprint_entity_count()
-            player.clear_cursor()
+            inv.destroy()
             rcon.print('{"success":true,"blueprint_string":"'..bp_string..'","entity_count":'..entity_count..',"x1":{{x1}},"y1":{{y1}},"x2":{{x2}},"y2":{{y2}}}')
             """);
 

@@ -108,7 +108,7 @@ public class RconClientPlayerTests
 
         Assert.Contains("create_entity({ name = \"character\"", prelude);
         Assert.Contains("storage.agent_chars[-c.unit_number] = c", prelude);
-        foreach (var member in new[] { "character", "index", "connected", "name", "clear_cursor", "build_from_cursor" })
+        foreach (var member in new[] { "character", "index", "connected", "name", "clear_cursor" })
             Assert.Contains($"k == \"{member}\"", prelude);
     }
 
