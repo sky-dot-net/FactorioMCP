@@ -132,15 +132,16 @@ internal sealed partial class FactorioService
         ArgumentException.ThrowIfNullOrWhiteSpace(targetStatus);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(pollInterval, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        const string invalidStatus =
+            """{"status":"error","error":"invalid_targetStatus","message":"valid: working, no_fuel, no_power, item_ingredient_shortage, full_output, waiting_for_source_items, ..."}""";
         targetStatus = targetStatus.Trim().ToLowerInvariant();
         if (!targetStatus.All(c => c is (>= 'a' and <= 'z') or '_'))
-            return string.Create(CultureInfo.InvariantCulture,
-                $$"""{"status":"error","error":"unknown_status","target_status":"{{targetStatus.Replace("\"", "'")}}"}""");
+            return invalidStatus;
 
         // A status the game does not know never comes, so do not wait for it (live game: agents waited for 'idle')
         var known = await rcon.ExecuteLuaAsync($$"""rcon.print(defines.entity_status["{{targetStatus}}"] and "yes" or "no")""", cancellationToken);
         if (known.Trim() == "no")
-            return $$"""{"status":"error","error":"unknown_status","target_status":"{{targetStatus}}","hint":"e.g. working, no_fuel, no_power, item_ingredient_shortage, full_output, waiting_for_source_items"}""";
+            return invalidStatus;
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
@@ -228,7 +229,7 @@ internal sealed partial class FactorioService
             end
             local inv_type = defines.inventory["{{inventoryKey}}"]
             if not inv_type then
-                rcon.print('{"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}"}')
+                rcon.print('{"error":"invalid_inventoryType"}')
                 return
             end
             local inv = e.get_inventory(inv_type)
@@ -252,9 +253,9 @@ internal sealed partial class FactorioService
                 if (result.Contains("no_entity"))
                     return string.Create(CultureInfo.InvariantCulture,
                         $$"""{"status":"error","error":"no_entity","x":{{x}},"y":{{y}}}""");
-                if (result.Contains("invalid_inventory_type"))
+                if (result.Contains("invalid_inventoryType"))
                     return string.Create(CultureInfo.InvariantCulture,
-                        $$"""{"status":"error","error":"invalid_inventory_type","inventory_type":"{{inventoryType}}"}""");
+                        $$"""{"status":"error","error":"invalid_inventoryType","message":"{{InventoryNames.ValidTypes}}"}""");
                 if (result.Contains("no_inventory"))
                     return string.Create(CultureInfo.InvariantCulture,
                         $$"""{"status":"error","error":"no_inventory","inventory_type":"{{inventoryType}}","x":{{x}},"y":{{y}}}""");

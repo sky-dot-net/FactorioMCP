@@ -7,7 +7,8 @@ namespace FactorioMCP;
 /// <summary>
 /// Turns an exception from a tool into a short error result that names the cause. Without this the MCP library
 /// answers only "An error occurred invoking '&lt;tool&gt;'." and the agent cannot tell what went wrong.
-/// Parameter errors are one compact line, e.g. <c>missing_value_for_param: recipe</c>.
+/// Parameter errors read like exception names: <c>missing_recipe</c>; <c>invalid_inventoryType</c> with the valid
+/// values as message.
 /// </summary>
 internal static partial class ToolErrors
 {
@@ -20,20 +21,15 @@ internal static partial class ToolErrors
     internal static string ToJson(Exception ex, IEnumerable<KeyValuePair<string, JsonElement>>? arguments = null, JsonElement? inputSchema = null)
     {
         if (MissingParameter().Match(ex.Message) is { Success: true } missing)
-            return Error($"missing_value_for_param: {missing.Groups[1].Value}");
+            return Error($"missing_{missing.Groups[1].Value}");
 
         // Argument binding fails with a JsonException that does not name the parameter
         if (ex is JsonException && WrongTypeParameter(arguments, inputSchema) is { } wrong)
-            return Error($"invalid_value_for_param: {wrong.Name} ({wrong.Expected})");
+            return Error($"invalid_{wrong.Name}", $"expected: {wrong.Expected}");
 
-        // A tool rejected a value: the parameter on the error line, the explanation without .NET's "(Parameter 'x')"
+        // A tool rejected a value: the parameter in the error code, the explanation without .NET's "(Parameter 'x')"
         if (ex is ArgumentException { ParamName: { } param } argument && param != "arguments")
-            return new JsonObject
-            {
-                ["success"] = false,
-                ["error"] = $"invalid_value_for_param: {param}",
-                ["message"] = argument.Message.Replace($" (Parameter '{param}')", ""),
-            }.ToJsonString();
+            return Error($"invalid_{param}", argument.Message.Replace($" (Parameter '{param}')", ""));
 
         var (error, message) = ex switch
         {
@@ -48,7 +44,13 @@ internal static partial class ToolErrors
         return new JsonObject { ["success"] = false, ["error"] = error, ["message"] = message }.ToJsonString();
     }
 
-    private static string Error(string error) => new JsonObject { ["success"] = false, ["error"] = error }.ToJsonString();
+    private static string Error(string error, string? message = null)
+    {
+        var result = new JsonObject { ["success"] = false, ["error"] = error };
+        if (message is not null)
+            result["message"] = message;
+        return result.ToJsonString();
+    }
 
     /// <summary>The first argument whose JSON kind does not match the type its schema property expects.</summary>
     internal static (string Name, string Expected)? WrongTypeParameter(IEnumerable<KeyValuePair<string, JsonElement>>? arguments, JsonElement? inputSchema)

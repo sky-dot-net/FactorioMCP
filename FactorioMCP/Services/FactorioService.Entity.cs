@@ -263,7 +263,7 @@ internal sealed partial class FactorioService
             end
             local inv_type = defines.inventory["{{inventoryKey}}"]
             if not inv_type then
-                rcon.print('{"success":false,"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
+                rcon.print('{"success":false,"error":"invalid_inventoryType","message":"{{InventoryNames.ValidTypes}}"}')
                 return
             end
             local inv = e.get_inventory(inv_type)
@@ -322,7 +322,7 @@ internal sealed partial class FactorioService
             end
             local inv_type = defines.inventory["{{inventoryKey}}"]
             if not inv_type then
-                rcon.print('{"success":false,"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
+                rcon.print('{"success":false,"error":"invalid_inventoryType","message":"{{InventoryNames.ValidTypes}}"}')
                 return
             end
             local inv = e.get_inventory(inv_type)
@@ -505,7 +505,7 @@ internal sealed partial class FactorioService
             local player = game.connected_players[1]
             local inv_id = defines.inventory["{{inventoryKey}}"]
             if not inv_id then
-                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
+                rcon.print('{"success":false,"error":"invalid_inventoryType","message":"{{InventoryNames.ValidTypes}}"}')
                 return
             end
             local e = pick_with_inventory(player.surface, {{x}}, {{y}}, inv_id)
@@ -559,7 +559,7 @@ internal sealed partial class FactorioService
             local player = game.connected_players[1]
             local inv_id = defines.inventory["{{inventoryKey}}"]
             if not inv_id then
-                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
+                rcon.print('{"success":false,"error":"invalid_inventoryType","message":"{{InventoryNames.ValidTypes}}"}')
                 return
             end
             local e = pick_with_inventory(player.surface, {{x}}, {{y}}, inv_id)

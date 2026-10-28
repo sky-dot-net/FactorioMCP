@@ -106,7 +106,7 @@ public class InventoryAndBuildTests
 
         var result = await service.WaitForEntityStatusAsync(1, 2, "idle", TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(60));
 
-        Assert.Contains("\"error\":\"unknown_status\"", result);
+        Assert.Contains("\"error\":\"invalid_targetStatus\"", result);
         Assert.Single(rcon.AllCommands);
     }
 }

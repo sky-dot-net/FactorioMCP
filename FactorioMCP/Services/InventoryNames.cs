@@ -21,6 +21,9 @@ internal static class InventoryNames
     internal const string Common =
         "fuel, chest, crafter_input (furnace/assembler input), crafter_output, crafter_modules, lab_input, burnt_result";
 
+    /// <summary>Message of an <c>invalid_inventoryType</c> error.</summary>
+    internal const string ValidTypes = "valid types: " + Common;
+
     /// <summary>
     /// The <c>defines.inventory</c> key for a tool's inventory name: an old name becomes its 2.1 name.
     /// Throws <see cref="ArgumentException"/> for names that cannot be a key (only a-z and _ are allowed).
@@ -30,7 +33,7 @@ internal static class InventoryNames
         ArgumentException.ThrowIfNullOrWhiteSpace(name, parameterName);
         var key = name.Trim();
         if (!key.All(c => c is (>= 'a' and <= 'z') or '_'))
-            throw new ArgumentException($"Invalid {parameterName} '{name}': use {Common}.", parameterName);
+            throw new ArgumentException(ValidTypes, parameterName);
         return Aliases.GetValueOrDefault(key, key);
     }
 }

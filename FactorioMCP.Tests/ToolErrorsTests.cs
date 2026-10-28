@@ -22,7 +22,7 @@ public class ToolErrorsTests
         var json = ToolErrors.ToJson(new ArgumentException(
             "The arguments dictionary is missing a value for the required parameter 'recipe'.", "arguments"));
 
-        Assert.Equal("""{"success":false,"error":"missing_value_for_param: recipe"}""", json);
+        Assert.Equal("""{"success":false,"error":"missing_recipe"}""", json);
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public class ToolErrorsTests
 
         var json = ToolErrors.ToJson(new JsonException("The JSON value could not be converted to System.Double."), args, schema);
 
-        Assert.Equal("""{"success":false,"error":"invalid_value_for_param: x (number)"}""", json);
+        Assert.Equal("""{"success":false,"error":"invalid_x","message":"expected: number"}""", json);
     }
 
     [Fact]
@@ -48,10 +48,10 @@ public class ToolErrorsTests
     [Fact]
     public void RejectedValue_NamesTheParameterAndKeepsTheHint()
     {
-        var (error, message) = Parse(ToolErrors.ToJson(new ArgumentException("Invalid inventoryType 'Chest': use fuel, chest.", "inventoryType")));
+        var (error, message) = Parse(ToolErrors.ToJson(new ArgumentException("valid types: fuel, chest", "inventoryType")));
 
-        Assert.Equal("invalid_value_for_param: inventoryType", error);
-        Assert.Equal("Invalid inventoryType 'Chest': use fuel, chest.", message);
+        Assert.Equal("invalid_inventoryType", error);
+        Assert.Equal("valid types: fuel, chest", message);
     }
 
     [Fact]

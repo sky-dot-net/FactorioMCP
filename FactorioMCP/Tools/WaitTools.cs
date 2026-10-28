@@ -97,7 +97,7 @@ internal sealed class WaitTools(FactorioService factorio, GameCommandQueue queue
         "Wait until an entity at the specified position reaches a target status. " +
         "Status names follow defines.entity_status: 'working', 'no_fuel', 'no_power', " +
         "'item_ingredient_shortage', 'no_recipe', 'full_output', 'waiting_for_source_items', etc.; " +
-        "an unknown name returns error unknown_status at once. " +
+        "an unknown name returns error invalid_targetStatus at once. " +
         "Use this to reactively wait for machines to finish or detect problems.")]
     public async Task<string> WaitForEntityStatus(
         [Description("X coordinate of the entity")]
