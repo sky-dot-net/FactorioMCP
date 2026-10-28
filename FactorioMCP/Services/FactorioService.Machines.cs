@@ -31,6 +31,36 @@ internal sealed partial class FactorioService
         """;
 
     /// <summary>
+    /// Lua helper <c>pick_with_inventory(surface, x, y, inv_id)</c>: the entity that has inventory <c>inv_id</c>,
+    /// preferring one whose box contains the point, else the nearest within 1 tile. Belts, ore and characters
+    /// next to a chest were picked before ("entities[1]"), which made get_entity_inventory report a belt.
+    /// <c>describe_at(surface, x, y)</c> lists what is there, for error messages.
+    /// </summary>
+    internal const string LuaPickWithInventory = """
+        local function pick_with_inventory(surface, x, y, inv_id)
+            local best, best_d
+            local function consider(list)
+                for _, e in pairs(list) do
+                    if e.type ~= "resource" and e.type ~= "character" and e.get_inventory(inv_id) then
+                        local d = (e.position.x - x) ^ 2 + (e.position.y - y) ^ 2
+                        if not best or d < best_d then best, best_d = e, d end
+                    end
+                end
+            end
+            consider(surface.find_entities_filtered{ position = { x, y } })
+            if not best then consider(surface.find_entities_filtered{ position = { x, y }, radius = 1 }) end
+            return best
+        end
+        local function describe_at(surface, x, y)
+            local names = {}
+            for _, e in pairs(surface.find_entities_filtered{ position = { x, y }, radius = 1 }) do
+                if e.type ~= "resource" then names[#names + 1] = e.name end
+            end
+            return table.concat(names, ",")
+        end
+        """;
+
+    /// <summary>
     /// Lua snippet: stop with an out_of_range error when the entity's box is farther than the reach distance.
     /// (can_reach_entity answers true for scripted characters at any distance, so the distance is checked here.)
     /// </summary>

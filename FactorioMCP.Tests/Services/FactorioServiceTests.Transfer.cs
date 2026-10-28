@@ -26,12 +26,12 @@ public partial class FactorioServiceTests
 
         Assert.Contains("find_entities_filtered", defaultCmd);
         Assert.Contains("get_inventory", defaultCmd);
-        Assert.Contains("defines.inventory.chest", defaultCmd);
+        Assert.Contains("defines.inventory[\"chest\"]", defaultCmd);
         Assert.Contains("player.insert", defaultCmd);
 
         // Verify custom inventory type
         await _service.TransferAllItemsAsync(10, 20, "furnace_result");
-        Assert.Contains("defines.inventory.furnace_result", _rcon.LastCommand!);
+        Assert.Contains("defines.inventory[\"furnace_result\"]", _rcon.LastCommand!);
     }
 
     [Fact]
@@ -42,11 +42,11 @@ public partial class FactorioServiceTests
 
         Assert.Contains("find_entities_filtered", defaultCmd);
         Assert.Contains("get_contents", defaultCmd);
-        Assert.Contains("defines.inventory.chest", defaultCmd);
+        Assert.Contains("defines.inventory[\"chest\"]", defaultCmd);
         Assert.Contains("get_inventory", defaultCmd);
 
         // Verify custom inventory type mapping
         await _service.GetEntityInventoryAsync(10, 20, "fuel");
-        Assert.Contains("defines.inventory.fuel", _rcon.LastCommand!);
+        Assert.Contains("defines.inventory[\"fuel\"]", _rcon.LastCommand!);
     }
 }

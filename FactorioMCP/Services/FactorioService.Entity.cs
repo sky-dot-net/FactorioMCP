@@ -463,21 +463,25 @@ internal sealed partial class FactorioService
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
+        if (!inventoryType.All(c => c is (>= 'a' and <= 'z') or '_'))
+            throw new ArgumentException($"Invalid inventoryType '{inventoryType}': use names like chest, fuel, furnace_source.", nameof(inventoryType));
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
+            {{LuaPickWithInventory}}
             local player = game.connected_players[1]
-            local entities = player.surface.find_entities_filtered{position={{{x}},{{y}}}, radius=1}
-            if #entities == 0 then
-                rcon.print('{"success":false,"error":"no_entity","x":{{x}},"y":{{y}}}')
+            local inv_id = defines.inventory["{{inventoryType}}"]
+            if not inv_id then
+                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"e.g. chest, fuel, furnace_source, furnace_result, assembling_machine_input, assembling_machine_output"}')
                 return
             end
-            local e = entities[1]
-            local inv = e.get_inventory(defines.inventory.{{inventoryType}})
-            if not inv then
-                rcon.print('{"success":false,"error":"no_inventory","entity":"'..esc(e.name)..'","inventory_type":"{{inventoryType}}"}')
+            local e = pick_with_inventory(player.surface, {{x}}, {{y}}, inv_id)
+            if not e then
+                local there = describe_at(player.surface, {{x}}, {{y}})
+                rcon.print('{"success":false,"error":"' .. (there == "" and "no_entity" or "no_inventory") .. '","x":{{x}},"y":{{y}},"inventory_type":"{{inventoryType}}","entities_here":"' .. there .. '"}')
                 return
             end
+            local inv = e.get_inventory(inv_id)
             local transferred = {}
             local total = 0
             local inv_full = false
@@ -515,21 +519,25 @@ internal sealed partial class FactorioService
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
+        if (!inventoryType.All(c => c is (>= 'a' and <= 'z') or '_'))
+            throw new ArgumentException($"Invalid inventoryType '{inventoryType}': use names like chest, fuel, furnace_source.", nameof(inventoryType));
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
+            {{LuaPickWithInventory}}
             local player = game.connected_players[1]
-            local entities = player.surface.find_entities_filtered{position={{{x}},{{y}}}, radius=1}
-            if #entities == 0 then
-                rcon.print('{"success":false,"error":"no_entity","x":{{x}},"y":{{y}}}')
+            local inv_id = defines.inventory["{{inventoryType}}"]
+            if not inv_id then
+                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"e.g. chest, fuel, furnace_source, furnace_result, assembling_machine_input, assembling_machine_output"}')
                 return
             end
-            local e = entities[1]
-            local inv = e.get_inventory(defines.inventory.{{inventoryType}})
-            if not inv then
-                rcon.print('{"success":false,"error":"no_inventory","entity":"'..esc(e.name)..'","inventory_type":"{{inventoryType}}"}')
+            local e = pick_with_inventory(player.surface, {{x}}, {{y}}, inv_id)
+            if not e then
+                local there = describe_at(player.surface, {{x}}, {{y}})
+                rcon.print('{"success":false,"error":"' .. (there == "" and "no_entity" or "no_inventory") .. '","x":{{x}},"y":{{y}},"inventory_type":"{{inventoryType}}","entities_here":"' .. there .. '"}')
                 return
             end
+            local inv = e.get_inventory(inv_id)
             local contents = inv.get_contents()
             local parts = {}
             for _, item in pairs(contents) do
