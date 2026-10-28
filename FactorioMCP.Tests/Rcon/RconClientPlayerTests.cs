@@ -112,6 +112,61 @@ public class RconClientPlayerTests
             Assert.Contains($"k == \"{member}\"", prelude);
     }
 
+    [Theory]
+    [InlineData("engineer")]
+    [InlineData("Engineer")]
+    public void ResolveAgentColor_EngineerIsRedByDefault(string name)
+    {
+        var color = RconClient.ResolveAgentColor(name, null);
+
+        Assert.NotNull(color);
+        Assert.True(color!.Value.R > 0.8 && color.Value.G < 0.2 && color.Value.B < 0.2);
+    }
+
+    [Fact]
+    public void ResolveAgentColor_OtherAgentsKeepDefaultColor()
+    {
+        Assert.Null(RconClient.ResolveAgentColor("agent", null));
+        Assert.Null(RconClient.ResolveAgentColor("engineer", "none"));
+    }
+
+    [Theory]
+    [InlineData("#00FF00", 0.0, 1.0, 0.0)]
+    [InlineData("0, 0, 255", 0.0, 0.0, 1.0)]
+    public void ResolveAgentColor_ParsesHexAndRgb(string setting, double r, double g, double b)
+    {
+        Assert.Equal((r, g, b), RconClient.ResolveAgentColor("agent", setting));
+    }
+
+    [Theory]
+    [InlineData("red")]
+    [InlineData("#12345")]
+    [InlineData("0,0,300")]
+    public void ResolveAgentColor_InvalidSetting_Throws(string setting)
+    {
+        Assert.Throws<ArgumentException>(() => RconClient.ResolveAgentColor("agent", setting));
+    }
+
+    [Fact]
+    public async Task ExecuteLua_EngineerAgent_SetsRedColorOnTheCharacter()
+    {
+        var rcon = new PlayerCapturingRconClient(null, "engineer");
+
+        await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
+
+        Assert.Contains("c.color = { r = 0.9, g = 0.05, b = 0.05, a = 1 }", rcon.LastCommand);
+    }
+
+    [Fact]
+    public async Task ExecuteLua_DefaultAgent_DoesNotChangeColor()
+    {
+        var rcon = new PlayerCapturingRconClient(null);
+
+        await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
+
+        Assert.DoesNotContain("c.color", rcon.LastCommand);
+    }
+
     [Fact]
     public void OnTickHandler_ResolvesAgentCharactersByNegativeIndex()
     {

@@ -80,10 +80,36 @@ internal class RconClient : IAsyncDisposable, IDisposable
         agentName = string.IsNullOrWhiteSpace(agentName) ? DefaultAgentName : agentName.Trim();
         ValidateName(agentName, "FACTORIO_AGENT");
         PlayerExpression = AgentExpression;
-        LuaPrelude = BuildAgentPrelude(agentName);
+        LuaPrelude = BuildAgentPrelude(agentName, ResolveAgentColor(agentName, configuration["FACTORIO_AGENT_COLOR"]));
     }
 
     internal const string AgentExpression = "__agent()";
+
+    /// <summary>
+    /// Colour of the agent's character, as red/green/blue in the range 0..1.
+    /// <c>FACTORIO_AGENT_COLOR</c> is <c>#RRGGBB</c> or <c>r,g,b</c> (0..255); <c>none</c> keeps the default colour.
+    /// Without the setting the agent named <c>engineer</c> is red and every other agent keeps the default colour.
+    /// </summary>
+    internal static (double R, double G, double B)? ResolveAgentColor(string agentName, string? setting)
+    {
+        setting = setting?.Trim();
+        if (string.IsNullOrEmpty(setting))
+            return string.Equals(agentName, "engineer", StringComparison.OrdinalIgnoreCase) ? (0.9, 0.05, 0.05) : null;
+        if (string.Equals(setting, "none", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        int[] channels;
+        if (Regex.IsMatch(setting, "^#[0-9a-fA-F]{6}$"))
+            channels = [Convert.ToInt32(setting[1..3], 16), Convert.ToInt32(setting[3..5], 16), Convert.ToInt32(setting[5..7], 16)];
+        else if (Regex.IsMatch(setting, @"^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$"))
+            channels = setting.Split(',').Select(part => int.Parse(part.Trim(), System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        else
+            throw new ArgumentException($"Invalid FACTORIO_AGENT_COLOR '{setting}': use #RRGGBB, 'r,g,b' (0-255) or 'none'.", nameof(setting));
+
+        if (channels.Any(channel => channel > 255))
+            throw new ArgumentException($"Invalid FACTORIO_AGENT_COLOR '{setting}': each channel must be 0-255.", nameof(setting));
+        return (channels[0] / 255.0, channels[1] / 255.0, channels[2] / 255.0);
+    }
 
     private static void ValidateName(string name, string setting)
     {
@@ -110,7 +136,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
     /// <c>clear_cursor</c>). The index is negative so it never collides with real player indices; the on_tick
     /// handler resolves negative indices through <c>storage.agent_chars</c>.
     /// </summary>
-    internal static string BuildAgentPrelude(string agentName) => $$"""
+    internal static string BuildAgentPrelude(string agentName, (double R, double G, double B)? color = null) => $$"""
         local function __agent()
             storage.agent_by_name = storage.agent_by_name or {}
             storage.agent_chars = storage.agent_chars or {}
@@ -124,6 +150,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
                 storage.agent_by_name["{{agentName}}"] = c
             end
             storage.agent_chars[-c.unit_number] = c
+            {{AgentColorLua(color)}}
             return setmetatable({}, {
                 __index = function(_, k)
                     if k == "character" then return c end
@@ -139,6 +166,10 @@ internal class RconClient : IAsyncDisposable, IDisposable
             })
         end
         """;
+
+    private static string AgentColorLua((double R, double G, double B)? color) => color is { } rgb
+        ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"c.color = {{ r = {rgb.R:0.###}, g = {rgb.G:0.###}, b = {rgb.B:0.###}, a = 1 }}")
+        : "-- default character colour";
 
     /// <summary>
     /// Whether the client is currently connected to the RCON server.
