@@ -1,4 +1,4 @@
-using FactorioMCP.Rcon;
+﻿using FactorioMCP.Rcon;
 using FactorioMCP.Services;
 using Microsoft.Extensions.Configuration;
 using Xunit;
@@ -6,11 +6,15 @@ using Xunit;
 namespace FactorioMCP.Tests.Rcon;
 
 /// <summary>
-/// Test double that captures commands and is configured with a FACTORIO_PLAYER value.
+/// Test double that captures commands and is configured with FACTORIO_PLAYER / FACTORIO_AGENT values.
 /// </summary>
-internal sealed class PlayerCapturingRconClient(string? playerName) : RconClient(null,
+internal sealed class PlayerCapturingRconClient(string? playerName, string? agentName = null) : RconClient(null,
     new ConfigurationBuilder()
-        .AddInMemoryCollection(new Dictionary<string, string?> { ["FACTORIO_PLAYER"] = playerName })
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["FACTORIO_PLAYER"] = playerName,
+            ["FACTORIO_AGENT"] = agentName
+        })
         .Build())
 {
     public string? LastCommand { get; private set; }
@@ -57,13 +61,61 @@ public class RconClientPlayerTests
     }
 
     [Fact]
-    public async Task ExecuteLua_WithoutPlayer_LeavesCommandUnchanged()
+    public async Task ExecuteLua_WithoutPlayer_UsesDefaultAgentCharacter()
     {
         var rcon = new PlayerCapturingRconClient(null);
 
         await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
 
-        Assert.Equal("/silent-command local p = game.connected_players[1]", rcon.LastCommand);
+        Assert.StartsWith("/silent-command local function __agent()", rcon.LastCommand);
+        Assert.Contains("storage.agent_by_name[\"agent\"]", rcon.LastCommand);
+        Assert.EndsWith("\nlocal p = __agent()", rcon.LastCommand);
+    }
+
+    [Fact]
+    public async Task ExecuteLua_WithAgentName_UsesThatCharacter()
+    {
+        var rcon = new PlayerCapturingRconClient(null, "builder-2");
+
+        await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
+
+        Assert.Contains("storage.agent_by_name[\"builder-2\"]", rcon.LastCommand);
+        Assert.DoesNotContain("connected_players[1]", rcon.LastCommand);
+    }
+
+    [Fact]
+    public async Task ExecuteLua_PlayerSettingWinsOverAgent()
+    {
+        var rcon = new PlayerCapturingRconClient("Sky", "builder-2");
+
+        await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
+
+        Assert.Equal("/silent-command local p = game.get_player(\"Sky\")", rcon.LastCommand);
+    }
+
+    [Theory]
+    [InlineData("a b")]
+    [InlineData("x\"]")]
+    public void InvalidAgentName_Throws(string name)
+    {
+        Assert.Throws<ArgumentException>(() => new PlayerCapturingRconClient(null, name));
+    }
+
+    [Fact]
+    public void AgentPrelude_ProvidesPlayerOnlyMembers()
+    {
+        var prelude = RconClient.BuildAgentPrelude("agent");
+
+        Assert.Contains("create_entity({ name = \"character\"", prelude);
+        Assert.Contains("storage.agent_chars[-c.unit_number] = c", prelude);
+        foreach (var member in new[] { "character", "index", "connected", "name", "clear_cursor", "build_from_cursor" })
+            Assert.Contains($"k == \"{member}\"", prelude);
+    }
+
+    [Fact]
+    public void OnTickHandler_ResolvesAgentCharactersByNegativeIndex()
+    {
+        Assert.Contains("storage.agent_chars and storage.agent_chars[index]", FactorioService.LuaOnTickHandler);
     }
 
     [Fact]

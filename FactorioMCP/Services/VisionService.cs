@@ -251,7 +251,8 @@ internal sealed class VisionService(RconClient rcon)
 
             -- Take screenshot with alt-mode info
             game.take_screenshot{
-                player=player,
+                player=(player.object_name == "LuaPlayer") and player or nil,
+                surface=player.surface,
                 position={cx, cy},
                 resolution={x={{width}}, y={{height}}},
                 zoom=zoom,

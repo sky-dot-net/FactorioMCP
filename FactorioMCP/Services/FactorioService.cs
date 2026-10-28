@@ -50,20 +50,28 @@ internal sealed partial class FactorioService(RconClient rcon)
     /// Lua on_tick handler that continuously re-applies walking_state and mining_state
     /// every tick. Required in Factorio 2 where both states reset after each tick.
     /// Reads from <c>storage.walk_dirs</c> (set by PathfindingService) and
-    /// <c>storage.mine_states</c> (set by MiningService), both keyed by player index,
-    /// so several MCP instances can each drive their own player.
+    /// <c>storage.mine_states</c> (set by MiningService), both keyed by player index
+    /// (negative for agent characters, resolved through <c>storage.agent_chars</c>),
+    /// so several MCP instances can each drive their own player or character.
     /// </summary>
     internal const string LuaOnTickHandler = """
         script.on_event(defines.events.on_tick, function()
-            for index, d in pairs(storage.walk_dirs or {}) do
-                local p = game.get_player(index)
-                if p and p.connected and p.character and p.character.valid then
-                    p.walking_state = {walking = true, direction = d}
+            local function controller(index)
+                if index > 0 then
+                    local p = game.get_player(index)
+                    if p and p.connected and p.character and p.character.valid then return p end
+                else
+                    local c = storage.agent_chars and storage.agent_chars[index]
+                    if c and c.valid then return c end
                 end
             end
+            for index, d in pairs(storage.walk_dirs or {}) do
+                local p = controller(index)
+                if p then p.walking_state = {walking = true, direction = d} end
+            end
             for index, m in pairs(storage.mine_states or {}) do
-                local p = game.get_player(index)
-                if p and p.connected then
+                local p = controller(index)
+                if p then
                     p.update_selected_entity(m.position)
                     p.mining_state = {mining = true, position = m.position}
                 end

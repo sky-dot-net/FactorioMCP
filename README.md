@@ -37,9 +37,12 @@ factorio --start-server save.zip --rcon-port 27015 --rcon-password mypassword
 | `FACTORIO_RCON_PORT` | `27015` | RCON server port |
 | `FACTORIO_RCON_PASSWORD` | `mypassword` | RCON password |
 | `FACTORIO_BUILDINGS_FILE` | `buildings.json` | File path for building memory persistence |
-| `FACTORIO_PLAYER` | first connected player | Name of the player this instance controls |
+| `FACTORIO_AGENT` | `agent` | Name of the agent character this instance controls (default mode) |
+| `FACTORIO_PLAYER` | not set | Name of a connected player to control instead of an agent character |
 
-To run several agents in one game, start one MCP instance per agent, each with its own `FACTORIO_PLAYER` (a player connected to the game under that name) and its own `FACTORIO_BUILDINGS_FILE`. Walking and mining state is kept per player, so the instances do not interfere.
+By default the server controls an agent character: a character entity created by script near spawn on first use, with no player or client behind it. It works on a headless server, and people can join the game with their own players next to it. The character persists in the save under its `FACTORIO_AGENT` name. Set `FACTORIO_PLAYER` to control a connected player instead. Blueprint placement through the cursor (`PlaceBlueprintString`) needs a real player; agents use `PlaceGhostBatch` and construction robots.
+
+To run several agents in one game, start one MCP instance per agent, each with its own `FACTORIO_AGENT` name and its own `FACTORIO_BUILDINGS_FILE`. Walking and mining state is kept per character, so the instances do not interfere.
 
 ### 3. Build
 

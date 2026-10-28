@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
@@ -42,15 +42,53 @@ internal class RconClient : IAsyncDisposable, IDisposable
     internal const string DefaultPlayerExpression = "game.connected_players[1]";
 
     /// <summary>
-    /// Lua expression for the player this instance controls. Set via <c>FACTORIO_PLAYER</c>
-    /// to let several MCP instances drive different players in the same game.
+    /// Agent name used when neither <c>FACTORIO_PLAYER</c> nor <c>FACTORIO_AGENT</c> is set.
+    /// </summary>
+    internal const string DefaultAgentName = "agent";
+
+    /// <summary>
+    /// Lua expression that replaces <see cref="DefaultPlayerExpression"/> in every command.
+    /// Agent mode (default): a scripted character named by <c>FACTORIO_AGENT</c>, needing no client.
+    /// Player mode: the connected player named by <c>FACTORIO_PLAYER</c>.
     /// </summary>
     public string PlayerExpression { get; }
+
+    /// <summary>
+    /// Lua code prepended to every command in agent mode; defines <c>__agent()</c>. Null in player mode.
+    /// </summary>
+    public string? LuaPrelude { get; }
 
     public RconClient(ILogger<RconClient>? logger = null, IConfiguration? configuration = null)
     {
         _logger = logger ?? NullLogger<RconClient>.Instance;
-        PlayerExpression = BuildPlayerExpression(configuration?["FACTORIO_PLAYER"]);
+
+        // Without configuration (unit tests) commands are sent unchanged.
+        if (configuration is null)
+        {
+            PlayerExpression = DefaultPlayerExpression;
+            return;
+        }
+
+        var playerName = configuration["FACTORIO_PLAYER"];
+        if (!string.IsNullOrWhiteSpace(playerName))
+        {
+            PlayerExpression = BuildPlayerExpression(playerName);
+            return;
+        }
+
+        var agentName = configuration["FACTORIO_AGENT"];
+        agentName = string.IsNullOrWhiteSpace(agentName) ? DefaultAgentName : agentName.Trim();
+        ValidateName(agentName, "FACTORIO_AGENT");
+        PlayerExpression = AgentExpression;
+        LuaPrelude = BuildAgentPrelude(agentName);
+    }
+
+    internal const string AgentExpression = "__agent()";
+
+    private static void ValidateName(string name, string setting)
+    {
+        if (!Regex.IsMatch(name, @"^[A-Za-z0-9_.\-]+$"))
+            throw new ArgumentException($"Invalid {setting} name: '{name}'", nameof(name));
     }
 
     /// <summary>
@@ -61,11 +99,49 @@ internal class RconClient : IAsyncDisposable, IDisposable
         if (string.IsNullOrWhiteSpace(playerName))
             return DefaultPlayerExpression;
 
-        if (!Regex.IsMatch(playerName, @"^[A-Za-z0-9_.\-]+$"))
-            throw new ArgumentException($"Invalid FACTORIO_PLAYER name: '{playerName}'", nameof(playerName));
-
+        ValidateName(playerName, "FACTORIO_PLAYER");
         return $"game.get_player(\"{playerName}\")";
     }
+
+    /// <summary>
+    /// Lua prelude for agent mode. <c>__agent()</c> returns a proxy for the agent's character: it creates the
+    /// character near spawn on first use, forwards every LuaControl member to it, and supplies the few
+    /// LuaPlayer-only members the services use (<c>character</c>, <c>index</c>, <c>connected</c>, <c>name</c>,
+    /// <c>clear_cursor</c>). The index is negative so it never collides with real player indices; the on_tick
+    /// handler resolves negative indices through <c>storage.agent_chars</c>.
+    /// </summary>
+    internal static string BuildAgentPrelude(string agentName) => $$"""
+        local function __agent()
+            storage.agent_by_name = storage.agent_by_name or {}
+            storage.agent_chars = storage.agent_chars or {}
+            local c = storage.agent_by_name["{{agentName}}"]
+            if not (c and c.valid) then
+                local surface = game.surfaces["nauvis"]
+                local force = game.forces["player"]
+                local spawn = force.get_spawn_position(surface)
+                local pos = surface.find_non_colliding_position("character", spawn, 50, 0.5) or spawn
+                c = surface.create_entity({ name = "character", position = pos, force = force })
+                storage.agent_by_name["{{agentName}}"] = c
+            end
+            storage.agent_chars[-c.unit_number] = c
+            return setmetatable({}, {
+                __index = function(_, k)
+                    if k == "character" then return c end
+                    if k == "index" then return -c.unit_number end
+                    if k == "connected" then return true end
+                    if k == "name" then return "{{agentName}}" end
+                    if k == "clear_cursor" then
+                        return function() if c.cursor_stack then c.cursor_stack.clear() end end
+                    end
+                    if k == "build_from_cursor" then
+                        return function() error("build_from_cursor needs a real player; use place_ghost_batch and construction robots") end
+                    end
+                    return c[k]
+                end,
+                __newindex = function(_, k, v) c[k] = v end
+            })
+        end
+        """;
 
     /// <summary>
     /// Whether the client is currently connected to the RCON server.
@@ -162,6 +238,8 @@ internal class RconClient : IAsyncDisposable, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(luaCode);
         if (PlayerExpression != DefaultPlayerExpression)
             luaCode = luaCode.Replace(DefaultPlayerExpression, PlayerExpression, StringComparison.Ordinal);
+        if (LuaPrelude is not null)
+            luaCode = LuaPrelude + "\n" + luaCode;
         return ExecuteAsync($"/silent-command {luaCode}", cancellationToken);
     }
 
