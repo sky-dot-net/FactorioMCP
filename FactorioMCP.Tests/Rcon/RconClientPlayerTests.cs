@@ -207,5 +207,7 @@ public class RconClientPlayerTests
         Assert.Contains("storage.agent_map_labels[c.unit_number] = {", prelude);
         Assert.Equal(2, prelude.Split("render_mode = \"chart\"").Length - 1);
         Assert.Contains("elseif mark.text.text ~= text then", prelude);
+        Assert.Contains($"mark.v == {RconClient.MapLabelVersion}", prelude);
+        Assert.Contains("scale = 0.8", prelude);
     }
 }

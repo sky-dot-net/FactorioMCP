@@ -151,6 +151,9 @@ internal class RconClient : IAsyncDisposable, IDisposable
     /// <c>clear_cursor</c>). The index is negative so it never collides with real player indices; the on_tick
     /// handler resolves negative indices through <c>storage.agent_chars</c>.
     /// </summary>
+    /// <summary>Style version of the agents' map marks; marks of another version are drawn again.</summary>
+    internal const int MapLabelVersion = 2;
+
     internal static string BuildAgentPrelude(string agentName, (double R, double G, double B)? color = null) => $$"""
         local function __agent_label()
             local chosen = storage.agent_display_names and storage.agent_display_names["{{agentName}}"]
@@ -180,19 +183,21 @@ internal class RconClient : IAsyncDisposable, IDisposable
             elseif label.text ~= text then
                 label.text = text
             end
-            -- Agents are no players, so the map does not show them by itself: a dot and the name in map view
+            -- Agents are no players, so the map does not show them by itself: a dot and the name in map view,
+            -- as small as a player's name. Marks of an older style (v) are drawn again.
             storage.agent_map_labels = storage.agent_map_labels or {}
             local mark = storage.agent_map_labels[c.unit_number]
-            if not (mark and mark.dot.valid and mark.text.valid) then
+            if not (mark and mark.v == {{MapLabelVersion}} and mark.dot.valid and mark.text.valid) then
                 if mark then
-                    if mark.dot.valid then mark.dot.destroy() end
-                    if mark.text.valid then mark.text.destroy() end
+                    if mark.dot and mark.dot.valid then mark.dot.destroy() end
+                    if mark.text and mark.text.valid then mark.text.destroy() end
                 end
                 storage.agent_map_labels[c.unit_number] = {
+                    v = {{MapLabelVersion}},
                     dot = rendering.draw_circle({ color = c.color, radius = 1.2, filled = true, target = { entity = c },
                         surface = c.surface, render_mode = "chart" }),
                     text = rendering.draw_text({ text = text, surface = c.surface, target = { entity = c, offset = { 0, -1.5 } },
-                        color = c.color, scale = 1.4, alignment = "center", vertical_alignment = "bottom",
+                        color = c.color, scale = 0.8, alignment = "center", vertical_alignment = "bottom",
                         scale_with_zoom = true, render_mode = "chart" }),
                 }
             elseif mark.text.text ~= text then
