@@ -37,7 +37,7 @@ public class AgentChatNameTests
         var prelude = RconClient.BuildAgentPrelude("agent");
 
         Assert.Contains("rendering.draw_text(", prelude);
-        Assert.Contains("target = { entity = c, offset = { 0, -2.6 } }", prelude);
+        Assert.Contains("target = { entity = c, offset = { 0, -1.1 } }", prelude);
         Assert.Contains("label.text = text", prelude);
     }
 
@@ -49,7 +49,8 @@ public class AgentChatNameTests
         await service.SendChatMessageAsync("hello");
 
         Assert.Contains("local sender = __agent_label()", rcon.LastCommand);
-        Assert.Contains("game.print(sender .. \": hello\", { color = agent.color })", rcon.LastCommand);
+        Assert.Contains("game.print(sender .. \": hello\", { color = light })", rcon.LastCommand);
+        Assert.Contains("r = 0.6 + 0.4 * col.r", rcon.LastCommand);
         Assert.Contains("You have not chosen a name yet", rcon.LastCommand);
     }
 

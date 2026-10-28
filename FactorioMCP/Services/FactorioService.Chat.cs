@@ -114,7 +114,9 @@ internal sealed partial class FactorioService
                 local sender = __agent_label()
                 local hint = ""
                 {{hint}}
-                game.print(sender .. ": {{escaped}}", { color = agent.color })
+                local col = agent.color
+                local light = col and { r = 0.6 + 0.4 * col.r, g = 0.6 + 0.4 * col.g, b = 0.6 + 0.4 * col.b } or nil
+                game.print(sender .. ": {{escaped}}", { color = light })
                 rcon.print('{"status":"sent","sender":"' .. sender .. '"' .. hint .. '}')
                 """;
         }

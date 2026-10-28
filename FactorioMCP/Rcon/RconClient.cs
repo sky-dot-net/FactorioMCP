@@ -175,7 +175,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
             storage.agent_labels = storage.agent_labels or {}
             local label, text = storage.agent_labels[c.unit_number], __agent_label()
             if not (label and label.valid) then
-                storage.agent_labels[c.unit_number] = rendering.draw_text({ text = text, surface = c.surface, target = { entity = c, offset = { 0, -2.6 } },
+                storage.agent_labels[c.unit_number] = rendering.draw_text({ text = text, surface = c.surface, target = { entity = c, offset = { 0, -1.1 } },
                     color = c.color, scale = 1.2, alignment = "center", vertical_alignment = "bottom" })
             elseif label.text ~= text then
                 label.text = text
