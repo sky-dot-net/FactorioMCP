@@ -42,14 +42,14 @@ internal class RconClient : IAsyncDisposable, IDisposable
     internal const string DefaultPlayerExpression = "game.connected_players[1]";
 
     /// <summary>
-    /// Agent name used when neither <c>FACTORIO_PLAYER</c> nor <c>FACTORIO_AGENT</c> is set.
+    /// Agent name used when neither <c>Agent:ControlPlayer</c> nor <c>Agent:Name</c> is set.
     /// </summary>
     internal const string DefaultAgentName = "agent";
 
     /// <summary>
     /// Lua expression that replaces <see cref="DefaultPlayerExpression"/> in every command.
-    /// Agent mode (default): a scripted character named by <c>FACTORIO_AGENT</c>, needing no client.
-    /// Player mode: the connected player named by <c>FACTORIO_PLAYER</c>.
+    /// Agent mode (default): a scripted character named by <c>Agent:Name</c>, needing no client.
+    /// Player mode: the connected player named by <c>Agent:ControlPlayer</c>.
     /// </summary>
     public string PlayerExpression { get; }
 
@@ -59,7 +59,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
     public string? LuaPrelude { get; }
 
     /// <summary>
-    /// Name of the scripted agent character (<c>FACTORIO_AGENT</c>) in agent mode; null in player mode.
+    /// Name of the scripted agent character (<c>Agent:Name</c>) in agent mode; null in player mode.
     /// </summary>
     public string? AgentName { get; }
 
@@ -83,26 +83,26 @@ internal class RconClient : IAsyncDisposable, IDisposable
             return;
         }
 
-        var playerName = configuration["FACTORIO_PLAYER"];
+        var playerName = configuration[AppSettings.ControlPlayer];
         if (!string.IsNullOrWhiteSpace(playerName))
         {
             PlayerExpression = BuildPlayerExpression(playerName);
             return;
         }
 
-        var agentName = configuration["FACTORIO_AGENT"];
+        var agentName = configuration[AppSettings.AgentName];
         agentName = string.IsNullOrWhiteSpace(agentName) ? DefaultAgentName : agentName.Trim();
-        ValidateName(agentName, "FACTORIO_AGENT");
+        ValidateName(agentName, AppSettings.AgentName);
         PlayerExpression = AgentExpression;
         AgentName = agentName;
-        LuaPrelude = BuildAgentPrelude(agentName, ResolveAgentColor(agentName, configuration["FACTORIO_AGENT_COLOR"]));
+        LuaPrelude = BuildAgentPrelude(agentName, ResolveAgentColor(agentName, configuration[AppSettings.AgentColor]));
     }
 
     internal const string AgentExpression = "__agent()";
 
     /// <summary>
     /// Colour of the agent's character, as red/green/blue in the range 0..1.
-    /// <c>FACTORIO_AGENT_COLOR</c> is <c>#RRGGBB</c> or <c>r,g,b</c> (0..255); <c>none</c> keeps the default colour.
+    /// <c>Agent:Color</c> is <c>#RRGGBB</c> or <c>r,g,b</c> (0..255); <c>none</c> keeps the default colour.
     /// Without the setting the agent named <c>engineer</c> is red and every other agent keeps the default colour.
     /// </summary>
     internal static (double R, double G, double B)? ResolveAgentColor(string agentName, string? setting)
@@ -119,10 +119,10 @@ internal class RconClient : IAsyncDisposable, IDisposable
         else if (Regex.IsMatch(setting, @"^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$"))
             channels = setting.Split(',').Select(part => int.Parse(part.Trim(), System.Globalization.CultureInfo.InvariantCulture)).ToArray();
         else
-            throw new ArgumentException($"Invalid FACTORIO_AGENT_COLOR '{setting}': use #RRGGBB, 'r,g,b' (0-255) or 'none'.", nameof(setting));
+            throw new ArgumentException($"Invalid {AppSettings.AgentColor} '{setting}': use #RRGGBB, 'r,g,b' (0-255) or 'none'.", nameof(setting));
 
         if (channels.Any(channel => channel > 255))
-            throw new ArgumentException($"Invalid FACTORIO_AGENT_COLOR '{setting}': each channel must be 0-255.", nameof(setting));
+            throw new ArgumentException($"Invalid {AppSettings.AgentColor} '{setting}': each channel must be 0-255.", nameof(setting));
         return (channels[0] / 255.0, channels[1] / 255.0, channels[2] / 255.0);
     }
 
@@ -140,7 +140,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
         if (string.IsNullOrWhiteSpace(playerName))
             return DefaultPlayerExpression;
 
-        ValidateName(playerName, "FACTORIO_PLAYER");
+        ValidateName(playerName, AppSettings.ControlPlayer);
         return $"game.get_player(\"{playerName}\")";
     }
 

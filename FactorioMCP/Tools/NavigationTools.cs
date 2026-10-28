@@ -1,4 +1,4 @@
-using FactorioMCP.Services;
+﻿using FactorioMCP.Services;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Globalization;
@@ -145,7 +145,12 @@ internal sealed class NavigationTools(FactorioService factorio, PathfindingServi
             ? distProp.GetDouble()
             : 0.0;
 
-        return string.Create(CultureInfo.InvariantCulture,
+        var result = string.Create(CultureInfo.InvariantCulture,
             $$"""{"success":{{(status == "arrived" ? "true" : "false")}},"target_type":"{{targetType}}","target":"{{targetName}}","target_x":{{targetX}},"target_y":{{targetY}},"walk_status":"{{status}}","player_x":{{px}},"player_y":{{py}},"remaining_distance":{{remaining}}}""");
+
+        // Keep the explanation of a walk the restricted area blocked
+        if (root.TryGetProperty("restricted_area_note", out var note))
+            result = result[..^1] + ",\"restricted_area_note\":" + note.GetRawText() + "}";
+        return result;
     }
 }

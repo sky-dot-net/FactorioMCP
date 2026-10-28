@@ -6,14 +6,14 @@ using Xunit;
 namespace FactorioMCP.Tests.Rcon;
 
 /// <summary>
-/// Test double that captures commands and is configured with FACTORIO_PLAYER / FACTORIO_AGENT values.
+/// Test double that captures commands and is configured with Agent:ControlPlayer / Agent:Name settings.
 /// </summary>
 internal sealed class PlayerCapturingRconClient(string? playerName, string? agentName = null) : RconClient(null,
     new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["FACTORIO_PLAYER"] = playerName,
-            ["FACTORIO_AGENT"] = agentName
+            [AppSettings.ControlPlayer] = playerName,
+            [AppSettings.AgentName] = agentName
         })
         .Build())
 {

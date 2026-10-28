@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FactorioMCP.Models;
@@ -40,7 +40,8 @@ internal sealed class BuildingMemoryService
 
     public BuildingMemoryService(IConfiguration configuration, RconClient rcon)
     {
-        _filePath = configuration["FACTORIO_BUILDINGS_FILE"] ?? "buildings.json";
+        var file = configuration[AppSettings.BuildingsFile];
+        _filePath = AppSettings.ResolveRelative(string.IsNullOrWhiteSpace(file) ? "buildings.json" : file);
         _rcon = rcon;
     }
 

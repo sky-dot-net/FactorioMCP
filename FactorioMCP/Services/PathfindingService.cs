@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using FactorioMCP.Rcon;
@@ -17,7 +17,7 @@ namespace FactorioMCP.Services;
 /// must re-apply the walking direction every tick. C# controls the direction by writing
 /// to storage.walk_dirs[player index], and the on_tick handler reads it to keep the player moving.
 /// </summary>
-internal sealed class PathfindingService(RconClient rcon)
+internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? restrictedArea = null)
 {
     /// <summary>
     /// Poll interval for position checks during walking. Can be overridden in tests.
@@ -31,14 +31,24 @@ internal sealed class PathfindingService(RconClient rcon)
 
     /// <summary>
     /// Walk to a target position using Factorio's A* pathfinder.
-    /// Returns a structured JSON result with status (arrived/stuck/timeout/no_path),
-    /// final position, and distance.
+    /// Returns a structured JSON result with status (arrived/stuck/timeout/no_path/restricted_area),
+    /// final position, and distance. A walk that the restricted area blocked carries a restricted_area_note.
     /// </summary>
     public async Task<string> WalkToAsync(
         double targetX, double targetY,
         double tolerance,
         double timeoutSeconds,
         CancellationToken cancellationToken = default)
+    {
+        var result = await WalkUncheckedAsync(targetX, targetY, tolerance, timeoutSeconds, cancellationToken);
+        return restrictedArea is null ? result : restrictedArea.AnnotateWalk(result);
+    }
+
+    private async Task<string> WalkUncheckedAsync(
+        double targetX, double targetY,
+        double tolerance,
+        double timeoutSeconds,
+        CancellationToken cancellationToken)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(timeoutSeconds, 0.5));
 
@@ -48,6 +58,10 @@ internal sealed class PathfindingService(RconClient rcon)
 
         if (dist <= tolerance)
             return FormatResult("arrived", px, py, targetX, targetY, dist, tolerance);
+
+        // Covers walks to targets the tools found themselves (move_to_entity, gather_resource, ...)
+        if (restrictedArea?.Blocks(targetX, targetY) == true)
+            return FormatResult("restricted_area", px, py, targetX, targetY, dist, tolerance);
 
         // Ensure path handler is installed (once per session)
         await EnsurePathHandlerInstalledAsync(cancellationToken);

@@ -1,4 +1,4 @@
-using FactorioMCP.Rcon;
+﻿using FactorioMCP.Rcon;
 using System.Globalization;
 using System.Text;
 
@@ -141,7 +141,7 @@ internal sealed partial class FactorioService
     {
         name = name?.Trim() ?? "";
         if (rcon.AgentName is null)
-            return Task.FromResult("""{"status":"error","error":"set_agent_name works only for scripted agents (FACTORIO_AGENT). In player mode (FACTORIO_PLAYER) the chat uses the player's own name."}""");
+            return Task.FromResult("""{"status":"error","error":"set_agent_name works only for scripted agents (Agent:Name). In player mode (Agent:ControlPlayer) the chat uses the player's own name."}""");
         if (RconClient.IsEngineer(rcon.AgentName))
             return Task.FromResult($$"""{"status":"error","error":"The engineer's chat name is fixed: {{RconClient.EngineerDisplayName}}."}""");
         if (!AgentDisplayNamePattern.IsMatch(name))

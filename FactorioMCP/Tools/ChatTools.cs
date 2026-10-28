@@ -1,4 +1,4 @@
-using FactorioMCP.Services;
+﻿using FactorioMCP.Services;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
@@ -10,7 +10,7 @@ namespace FactorioMCP.Tools;
 /// in storage.chat_log, and game.print() to send messages to all players.
 /// </summary>
 [McpServerToolType]
-internal sealed class ChatTools(FactorioService factorio, GameCommandQueue queue)
+internal sealed class ChatTools(FactorioService factorio, GameCommandQueue queue, RestrictedAreaGuard? restrictedArea = null)
 {
     [McpServerTool, Description(
         "Get chat messages from the in-game chat log. Returns messages sent by players " +
@@ -40,12 +40,17 @@ internal sealed class ChatTools(FactorioService factorio, GameCommandQueue queue
     [McpServerTool, Description(
         "Choose your own name when you join the server for the first time. Other players see it as " +
         "'[AI] <name>' in the chat and above your character. The name is chosen once and cannot be changed later; " +
-        "calling again with the same name is fine. Returns {status, chat_name} or {status:\"error\", error}.")]
+        "calling again with the same name is fine. Returns {status, chat_name, server_rules} or {status:\"error\", error}; " +
+        "server_rules lists rules of this server, such as restricted areas you may not enter.")]
     public Task<string> SetAgentName(
         [Description("Your name: 1-30 characters (letters, digits, space, _ . ' -), starting with a letter or digit.")]
         string name,
         CancellationToken cancellationToken = default)
     {
-        return queue.ExecuteAsync(nameof(SetAgentName), ct => factorio.SetAgentNameAsync(name, ct), cancellationToken);
+        return queue.ExecuteAsync(nameof(SetAgentName), async ct =>
+        {
+            var result = await factorio.SetAgentNameAsync(name, ct);
+            return restrictedArea is null ? result : restrictedArea.AddServerRules(result);
+        }, cancellationToken);
     }
 }

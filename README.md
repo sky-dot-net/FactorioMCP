@@ -29,20 +29,35 @@ factorio.exe --rcon-port 27015 --rcon-password mypassword
 factorio --start-server save.zip --rcon-port 27015 --rcon-password mypassword
 ```
 
-### 2. Configure Environment Variables
+### 2. Settings
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FACTORIO_RCON_HOST` | `127.0.0.1` | RCON server host |
-| `FACTORIO_RCON_PORT` | `27015` | RCON server port |
-| `FACTORIO_RCON_PASSWORD` | `mypassword` | RCON password |
-| `FACTORIO_BUILDINGS_FILE` | `buildings.json` | File path for building memory persistence |
-| `FACTORIO_AGENT` | `agent` | Name of the agent character this instance controls (default mode) |
-| `FACTORIO_PLAYER` | not set | Name of a connected player to control instead of an agent character |
+All settings are in `appsettings.json` next to `FactorioMCP.exe`; environment variables are not read. On the first start the server writes this file with the defaults, then you fill in the RCON password. The folder is self-contained: copy it to another PC and run it there.
 
-By default the server controls an agent character: a character entity created by script near spawn on first use, with no player or client behind it. It works on a headless server, and people can join the game with their own players next to it. The character persists in the save under its `FACTORIO_AGENT` name. Set `FACTORIO_PLAYER` to control a connected player instead. Blueprint tools work in both modes.
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Rcon:Host` | `127.0.0.1` | RCON server host |
+| `Rcon:Port` | `27015` | RCON server port |
+| `Rcon:Password` | empty (required) | RCON password |
+| `Agent:Name` | `agent` | Name of the agent character this instance controls (default mode) |
+| `Agent:Color` | empty | Character colour: `#RRGGBB`, `r,g,b` (0-255) or `none`; empty = red for the agent `engineer`, default colour for others |
+| `Agent:ControlPlayer` | empty | Name of a connected player to control instead of an agent character |
+| `BuildingsFile` | `buildings.json` | File for the building memory; a relative path is inside the exe's folder |
+| `RestrictedArea:CenterX`, `CenterY`, `Width`, `Height` | `0` | Rectangle on nauvis that only humans may enter. Width or Height 0 = no area, the feature is off |
 
-To run several agents in one game, start one MCP instance per agent, each with its own `FACTORIO_AGENT` name and its own `FACTORIO_BUILDINGS_FILE`. Walking and mining state is kept per character, so the instances do not interfere.
+```jsonc
+{
+  "Rcon": { "Host": "127.0.0.1", "Port": 27015, "Password": "mypassword" },
+  "Agent": { "Name": "agent", "Color": "", "ControlPlayer": "" },
+  "BuildingsFile": "buildings.json",
+  "RestrictedArea": { "CenterX": 0, "CenterY": 0, "Width": 0, "Height": 0 }
+}
+```
+
+By default the server controls an agent character: a character entity created by script near spawn on first use, with no player or client behind it. It works on a headless server, and people can join the game with their own players next to it. The character persists in the save under its `Agent:Name`. Set `Agent:ControlPlayer` to control a connected player instead. Blueprint tools work in both modes.
+
+To run several agents in one game, give each one its own settings file, each with its own `Agent:Name` and `BuildingsFile`: either copy the whole folder, or start the same exe with `--settings agent2.json` (a relative path is inside the exe's folder; a missing file is created with the defaults). Walking and mining state is kept per character, so the instances do not interfere.
+
+**Restricted area.** With `RestrictedArea` set, agents learn about the area at session start (server instructions), in the `set_agent_name` result and from `get_restricted_areas`. Tool calls that target a position inside it (`x`/`y`, `targetX`/`targetY`, `x1..y2` areas, the entries of `targets`, `placementsJson` and `planJson`) are refused with error `restricted_area`, the parameter and the nearest allowed position; walks to targets inside it, or blocked by it, carry a `restricted_area_note`. The agent `engineer` (the MCP developers' agent) is exempt. Changes to the file take effect without a restart, except the session-start instructions.
 
 ### 3. Build
 
@@ -61,10 +76,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "factorio": {
       "command": "dotnet",
-      "args": ["run", "--project", "path/to/FactorioMCP"],
-      "env": {
-        "FACTORIO_RCON_PASSWORD": "mypassword"
-      }
+      "args": ["run", "--project", "path/to/FactorioMCP"]
     }
   }
 }
@@ -72,7 +84,7 @@ Add to your `claude_desktop_config.json`:
 
 ### VS Code (GitHub Copilot)
 
-A pre-configured [`.vscode/mcp.json`](.vscode/mcp.json) is included in the repository. Open the workspace in VS Code and it will be detected automatically. Adjust the environment variables if needed.
+A pre-configured [`.vscode/mcp.json`](.vscode/mcp.json) is included in the repository. Open the workspace in VS Code and it will be detected automatically. Set the RCON password in `appsettings.json` next to the built exe.
 
 <details>
 <summary>Manual setup</summary>
@@ -85,12 +97,7 @@ Add to your `.vscode/mcp.json`:
     "factorio": {
       "type": "stdio",
       "command": "dotnet",
-      "args": ["run", "--project", "${workspaceFolder}/FactorioMCP"],
-      "env": {
-        "FACTORIO_RCON_HOST": "127.0.0.1",
-        "FACTORIO_RCON_PORT": "27015",
-        "FACTORIO_RCON_PASSWORD": "mypassword"
-      }
+      "args": ["run", "--project", "${workspaceFolder}/FactorioMCP"]
     }
   }
 }
@@ -112,12 +119,7 @@ Add to your `.vscode/mcp.json`:
    {
      "factorio": {
        "command": "dotnet",
-       "args": ["run", "--project", "path/to/FactorioMCP"],
-       "env": {
-         "FACTORIO_RCON_HOST": "127.0.0.1",
-         "FACTORIO_RCON_PORT": "27015",
-         "FACTORIO_RCON_PASSWORD": "mypassword"
-       }
+       "args": ["run", "--project", "path/to/FactorioMCP"]
      }
    }
    ```
