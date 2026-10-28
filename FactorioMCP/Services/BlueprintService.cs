@@ -31,8 +31,15 @@ internal sealed class BlueprintService(RconClient rcon)
             local pos = {{{x}}, {{y}}}
             local inner = "{{entityName}}"
             local dir = defines.direction.{{direction}}
-            if not surface.can_place_entity{name="entity-ghost", position=pos, force=player.force, direction=dir, inner_name=inner} then
-                rcon.print('{"success":false,"error":"invalid_position","entity":"'..inner..'","x":'..pos[1]..',"y":'..pos[2]..'}')
+            if not prototypes.entity[inner] then
+                rcon.print('{"success":false,"error":"unknown_entity","entity":"'..inner..'"}')
+                return
+            end
+            -- check the inner entity as a ghost (a check with name="entity-ghost" fails for every position)
+            if not surface.can_place_entity{name=inner, position=pos, force=player.force, direction=dir, build_check_type=defines.build_check_type.manual_ghost} then
+                local blockers = {}
+                for _, b in pairs(surface.find_entities_filtered{position=pos, radius=1}) do blockers[#blockers+1] = b.name end
+                rcon.print('{"success":false,"error":"invalid_position","entity":"'..inner..'","x":'..pos[1]..',"y":'..pos[2]..',"blocked_by":"'..table.concat(blockers, ",")..'"}')
                 return
             end
             local ghost = surface.create_entity{name="entity-ghost", inner_name=inner, position=pos, force=player.force, direction=dir}
@@ -81,9 +88,14 @@ internal sealed class BlueprintService(RconClient rcon)
                 if not name or not x or not y then
                     skipped = skipped + 1
                     errors[#errors+1] = '{"index":'..i..',"error":"missing_fields"}'
-                elseif not surface.can_place_entity{name="entity-ghost", position={x, y}, force=force, direction=dir, inner_name=name} then
+                elseif not prototypes.entity[name] then
                     skipped = skipped + 1
-                    errors[#errors+1] = '{"index":'..i..',"name":"'..name..'","x":'..x..',"y":'..y..',"error":"invalid_position"}'
+                    errors[#errors+1] = '{"index":'..i..',"name":"'..name..'","error":"unknown_entity"}'
+                elseif not surface.can_place_entity{name=name, position={x, y}, force=force, direction=dir, build_check_type=defines.build_check_type.manual_ghost} then
+                    skipped = skipped + 1
+                    local blockers = {}
+                    for _, b in pairs(surface.find_entities_filtered{position={x, y}, radius=1}) do blockers[#blockers+1] = b.name end
+                    errors[#errors+1] = '{"index":'..i..',"name":"'..name..'","x":'..x..',"y":'..y..',"error":"invalid_position","blocked_by":"'..table.concat(blockers, ",")..'"}'
                 else
                     local ghost = surface.create_entity{name="entity-ghost", inner_name=name, position={x, y}, force=force, direction=dir}
                     if ghost then
