@@ -73,30 +73,18 @@ internal sealed record RestrictedArea(double CenterX, double CenterY, double Wid
         return (exit.X, exit.Y);
     }
 
-    public string BoundsText => Invariant($"x {Left:0.##} to {Right:0.##}, y {Top:0.##} to {Bottom:0.##}");
+    // Texts stay short: agents read them on every refusal, and local models have small context windows.
 
-    public JsonObject ToJson() => new()
-    {
-        ["surface"] = "nauvis",
-        ["center"] = new JsonObject { ["x"] = CenterX, ["y"] = CenterY },
-        ["width"] = Width,
-        ["height"] = Height,
-        ["left"] = Left,
-        ["top"] = Top,
-        ["right"] = Right,
-        ["bottom"] = Bottom,
-        ["access"] = "humans only",
-        ["reason"] = "Closed staff area for the MCP developers, surrounded by a stone wall. " +
-                     "AI agents cannot walk into it, build, mine or act inside it.",
-    };
+    public string BoundsText => Invariant($"x {Left:0.##}..{Right:0.##}, y {Top:0.##}..{Bottom:0.##}");
+
+    public JsonObject BoundsJson() => new() { ["left"] = Left, ["top"] = Top, ["right"] = Right, ["bottom"] = Bottom };
+
+    /// <summary>The rule in one line, for set_agent_name.</summary>
+    public string Rule => $"Restricted area {BoundsText} (humans only): tools refuse targets inside it.";
 
     /// <summary>MCP server instructions that tell agents about the area at session start; null when there is none.</summary>
     public string? Instructions => Enabled
-        ? Invariant($"This Factorio server has a restricted area on nauvis: {BoundsText} ") +
-          Invariant($"(a {Width:0.##} x {Height:0.##} rectangle around ({CenterX:0.##}, {CenterY:0.##})), surrounded by a stone wall. ") +
-          "It is a closed staff area that only humans may enter. AI agents cannot walk into it, build, mine or act inside it: " +
-          "tools refuse such targets with error 'restricted_area'. This is intended, not a tool fault. " +
-          "get_restricted_areas returns the bounds."
+        ? $"Restricted area on nauvis, walled: {BoundsText} (humans only): tools refuse targets inside it."
         : null;
 
     /// <summary>
@@ -191,24 +179,17 @@ internal sealed class RestrictedAreaGuard
         if (TryNumber(args, "x1", out var x1) && TryNumber(args, "y1", out var y1)
             && TryNumber(args, "x2", out var x2) && TryNumber(args, "y2", out var y2)
             && area.Overlaps(x1, y1, x2, y2))
-        {
-            var refusal = Refusal(area, Invariant($"The area x {x1:0.##} to {x2:0.##}, y {y1:0.##} to {y2:0.##} (x1, y1, x2, y2) of {toolName} overlaps"),
-                "Use an area that ends outside it.");
-            refusal["parameter"] = "x1/y1/x2/y2";
-            return refusal.ToJsonString();
-        }
+            return Refusal(Invariant($"The area x {x1:0.##}..{x2:0.##}, y {y1:0.##}..{y2:0.##} overlaps the restricted area (humans only)."));
 
-        foreach (var (parameter, x, y) in FindPositions(args))
+        var positions = FindPositions(args).ToList();
+        foreach (var (parameter, x, y) in positions)
         {
             if (!area.Contains(x, y))
                 continue;
+            // Name the parameter only when the call has several positions, so the agent knows which one to fix
+            var source = positions.Count > 1 ? parameter + " " : "";
             var (nx, ny) = area.NearestOutside(x, y);
-            var refusal = Refusal(area, Invariant($"Position ({x:0.##}, {y:0.##}) from {parameter} of {toolName} is inside"),
-                Invariant($"Choose a target outside it, e.g. ({nx:0.##}, {ny:0.##})."));
-            refusal["parameter"] = parameter;
-            refusal["position"] = new JsonObject { ["x"] = x, ["y"] = y };
-            refusal["nearest_allowed_position"] = new JsonObject { ["x"] = nx, ["y"] = ny };
-            return refusal.ToJsonString();
+            return Refusal(Invariant($"{source}({x:0.##}, {y:0.##}) is in the restricted area (humans only). Nearest allowed: ({nx:0.##}, {ny:0.##})."));
         }
         return null;
     }
@@ -244,14 +225,11 @@ internal sealed class RestrictedAreaGuard
         if (area.Contains(tx, ty))
         {
             var (nx, ny) = area.NearestOutside(tx, ty);
-            note = Invariant($"The target ({tx:0.##}, {ty:0.##}) is inside the restricted area ({area.BoundsText}), a closed staff area that only humans may enter. ") +
-                   Invariant($"AI agents cannot walk into it. This is intended, not a tool fault. Pick a target outside it, e.g. ({nx:0.##}, {ny:0.##}).");
-            walk["nearest_allowed_position"] = new JsonObject { ["x"] = nx, ["y"] = ny };
+            note = Invariant($"Target is in the restricted area (humans only). Nearest allowed: ({nx:0.##}, {ny:0.##}).");
         }
         else if (area.DistanceTo(x, y) <= WalkNoteDistance || (status == "no_path" && area.CrossedBy(x, y, tx, ty)))
         {
-            note = Invariant($"The restricted area ({area.BoundsText}) lies in your way: a closed staff area that only humans may enter, surrounded by a stone wall. ") +
-                   "This is intended, not a tool fault. Walk around it or pick another target.";
+            note = "The restricted area (humans only) blocks the way; walk around it.";
         }
         else
         {
@@ -259,7 +237,6 @@ internal sealed class RestrictedAreaGuard
         }
 
         walk["restricted_area_note"] = note;
-        walk["restricted_area"] = area.ToJson();
         return walk.ToJsonString();
     }
 
@@ -281,9 +258,7 @@ internal sealed class RestrictedAreaGuard
         if (!area.Enabled || JsonNode.Parse(setAgentNameJson) is not JsonObject result || (string?)result["status"] == "error")
             return setAgentNameJson;
 
-        result["server_rules"] = new JsonArray(
-            JsonValue.Create(area.Instructions + (Exempt ? " You are the MCP engineer and exempt from this rule." : "")));
-        result["restricted_areas"] = new JsonArray(area.ToJson());
+        result["server_rules"] = new JsonArray(JsonValue.Create(area.Rule + (Exempt ? " You are exempt." : "")));
         return result.ToJsonString();
     }
 
@@ -302,16 +277,11 @@ internal sealed class RestrictedAreaGuard
 
         var areas = new JsonArray();
         if (area.Enabled)
-            areas.Add(area.ToJson());
-        return new JsonObject
-        {
-            ["success"] = true,
-            ["restricted_areas"] = areas,
-            ["you_are_exempt"] = Exempt,
-            ["message"] = area.Enabled
-                ? "Only humans may enter these areas. Tools refuse targets inside them with error 'restricted_area'; that is intended, not a tool fault."
-                : "This server has no restricted areas.",
-        }.ToJsonString();
+            areas.Add(area.BoundsJson());
+        var result = new JsonObject { ["restricted_areas"] = areas };
+        if (Exempt)
+            result["you_are_exempt"] = true;
+        return result.ToJsonString();
     }
 
     /// <summary>All positions in the arguments, with the parameter they came from.</summary>
@@ -378,14 +348,8 @@ internal sealed class RestrictedAreaGuard
         };
     }
 
-    private static JsonObject Refusal(RestrictedArea area, string subject, string advice) => new()
-    {
-        ["success"] = false,
-        ["error"] = "restricted_area",
-        ["message"] = $"{subject} the restricted area ({area.BoundsText}). It is a closed staff area that only humans may enter; " +
-                      $"AI agents cannot go there or act inside it. This is intended, not a tool fault. {advice}",
-        ["restricted_area"] = area.ToJson(),
-    };
+    private static string Refusal(string message) =>
+        new JsonObject { ["success"] = false, ["error"] = "restricted_area", ["message"] = message }.ToJsonString();
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }

@@ -11,10 +11,7 @@ namespace FactorioMCP.Tools;
 internal sealed class RestrictedAreaTools(RestrictedAreaGuard guard)
 {
     [McpServerTool, Description(
-        "List the restricted areas of this server: closed staff areas that only humans may enter, surrounded by a wall. " +
-        "AI agents cannot walk into them, build, mine or act inside them; tools refuse such targets with error " +
-        "'restricted_area' and walks blocked by one carry a restricted_area_note. That is intended, not a tool fault. " +
-        "Returns {success, restricted_areas:[{surface, center, width, height, left, top, right, bottom, access, reason}], " +
-        "you_are_exempt, message}; restricted_areas is empty when the server has none.")]
+        "List the restricted areas of this server (on nauvis, walled, humans only). Tools refuse targets inside them " +
+        "with error restricted_area. Returns {restricted_areas:[{left, top, right, bottom}]}; empty when there are none.")]
     public string GetRestrictedAreas() => guard.DescribeJson();
 }

@@ -72,12 +72,17 @@ public class RestrictedAreaTests
         Assert.False(Area.CrossedBy(-1700, 1000, -1700, 3000));
     }
 
+    // Refusals stay short (lean results for agents with small context windows): success, error and one sentence.
     [Theory]
-    [InlineData("place_entity", """{"name":"stone-furnace","x":-4000,"y":2000}""", "x/y")]
-    [InlineData("walk_to_position", """{"targetX":-4000,"targetY":2000}""", "targetX/targetY")]
-    [InlineData("route_belt", """{"startX":-1700,"startY":0,"endX":-1800,"endY":10}""", "endX/endY")]
-    [InlineData("place_entity", """{"x":"-4000","y":"2000"}""", "x/y")]
-    public void PositionInside_IsRefusedWithTheParameter(string tool, string args, string parameter)
+    [InlineData("place_entity", """{"name":"stone-furnace","x":-4000,"y":2000}""",
+        "(-4000, 2000) is in the restricted area (humans only). Nearest allowed: (-1753, 2000).")]
+    [InlineData("walk_to_position", """{"targetX":-4000,"targetY":2000}""",
+        "(-4000, 2000) is in the restricted area (humans only). Nearest allowed: (-1753, 2000).")]
+    [InlineData("route_belt", """{"startX":-1700,"startY":0,"endX":-1800,"endY":10}""",
+        "endX/endY (-1800, 10) is in the restricted area (humans only). Nearest allowed: (-1753, 10).")]
+    [InlineData("place_entity", """{"x":"-4000","y":"2000"}""",
+        "(-4000, 2000) is in the restricted area (humans only). Nearest allowed: (-1753, 2000).")]
+    public void PositionInside_IsRefusedInOneSentence(string tool, string args, string message)
     {
         var guard = new RestrictedAreaGuard(Area);
 
@@ -87,9 +92,8 @@ public class RestrictedAreaTests
         using var doc = JsonDocument.Parse(refusal);
         Assert.False(doc.RootElement.GetProperty("success").GetBoolean());
         Assert.Equal("restricted_area", doc.RootElement.GetProperty("error").GetString());
-        Assert.Equal(parameter, doc.RootElement.GetProperty("parameter").GetString());
-        Assert.Contains("not a tool fault", doc.RootElement.GetProperty("message").GetString());
-        Assert.True(doc.RootElement.TryGetProperty("nearest_allowed_position", out _));
+        Assert.Equal(message, doc.RootElement.GetProperty("message").GetString());
+        Assert.Equal(3, doc.RootElement.EnumerateObject().Count());
     }
 
     [Fact]
@@ -104,7 +108,7 @@ public class RestrictedAreaTests
         var refusal = guard.CheckToolCall("mine_entity_multiple", args);
 
         Assert.NotNull(refusal);
-        Assert.Contains("\"parameter\":\"targets[1]\"", refusal);
+        Assert.Contains("targets[1] (-3000, 100) is in the restricted area (humans only). Nearest allowed: (-3000, -577).", refusal);
     }
 
     [Fact]
@@ -115,7 +119,7 @@ public class RestrictedAreaTests
         var refusal = guard.CheckToolCall("get_area_occupancy", Args("""{"x1":-1760,"y1":0,"x2":-1700,"y2":50}"""));
 
         Assert.NotNull(refusal);
-        Assert.Contains("\"parameter\":\"x1/y1/x2/y2\"", refusal);
+        Assert.Contains("The area x -1760..-1700, y 0..50 overlaps the restricted area (humans only).", refusal);
     }
 
     [Theory]
@@ -155,8 +159,7 @@ public class RestrictedAreaTests
 
         var annotated = new RestrictedAreaGuard(Area).AnnotateWalk(walk);
 
-        Assert.Contains("restricted_area_note", annotated);
-        Assert.Contains("not a tool fault", annotated);
+        Assert.Contains("\"restricted_area_note\":\"The restricted area (humans only) blocks the way; walk around it.\"}", annotated);
     }
 
     [Fact]
@@ -190,7 +193,7 @@ public class RestrictedAreaTests
         var result = await pathfinding.WalkToAsync(-1800, 1000, 1, 10);
 
         Assert.Contains("\"status\":\"restricted_area\"", result);
-        Assert.Contains("restricted_area_note", result);
+        Assert.Contains("\"restricted_area_note\":\"Target is in the restricted area (humans only). Nearest allowed: (-1753, 1000).\"", result);
         Assert.Single(rcon.AllCommands);
     }
 
@@ -201,9 +204,8 @@ public class RestrictedAreaTests
 
         var result = guard.AddServerRules("""{"status":"named","chat_name":"[AI] Rusty"}""");
 
-        Assert.Contains("\"server_rules\":[", result);
-        Assert.Contains("only humans may enter", result);
-        Assert.Contains("\"restricted_areas\":[", result);
+        Assert.Contains("\"server_rules\":[\"Restricted area x -6755..-1755, y -575..4425 (humans only): tools refuse targets inside it.\"]", result);
+        Assert.DoesNotContain("restricted_areas", result);
         Assert.Equal("""{"status":"error","error":"x"}""", guard.AddServerRules("""{"status":"error","error":"x"}"""));
     }
 
@@ -213,8 +215,10 @@ public class RestrictedAreaTests
         var on = new RestrictedAreaTools(new RestrictedAreaGuard(Area)).GetRestrictedAreas();
         var off = new RestrictedAreaTools(new RestrictedAreaGuard(RestrictedArea.None)).GetRestrictedAreas();
 
-        Assert.Contains("\"left\":-6755", on);
-        Assert.Contains("\"you_are_exempt\":false", on);
-        Assert.Contains("\"restricted_areas\":[]", off);
+        var exempt = new RestrictedAreaTools(new RestrictedAreaGuard(Area, exempt: true)).GetRestrictedAreas();
+
+        Assert.Equal("""{"restricted_areas":[{"left":-6755,"top":-575,"right":-1755,"bottom":4425}]}""", on);
+        Assert.Equal("""{"restricted_areas":[]}""", off);
+        Assert.Contains("\"you_are_exempt\":true", exempt);
     }
 }
