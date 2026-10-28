@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using FactorioMCP.Rcon;
 
 namespace FactorioMCP.Services;
@@ -120,7 +120,7 @@ internal sealed class ProductionPlannerService(RconClient rcon)
                 end
                 visited[item_name] = true
                 local energy = recipe.energy
-                local cat = recipe.category
+                local cat = recipe.categories[1] -- Factorio 2.1: recipe.category is gone
                 local machine_name = get_machine(cat)
                 local speed = get_speed(machine_name)
                 local eff_time = energy / speed

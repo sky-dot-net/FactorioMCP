@@ -57,7 +57,8 @@ public partial class FactorioServiceTests
         Assert.Contains("\"stone-furnace\"", findCmd);
         Assert.Contains("radius=50", findCmd);
         Assert.Contains("find_entities_filtered{name=filter", findCmd);
-        Assert.Contains("find_entities_filtered{type=filter", findCmd);
+        Assert.Contains("pcall(surface.find_entities_filtered, {type=filter", findCmd);
+        Assert.Contains("if prototypes.entity[filter] then", findCmd); // an unknown name made the name search throw
         Assert.Contains("\"distance\":", findCmd);
 
         await _service.FindBestResourcePatchAsync("iron-ore", 500);

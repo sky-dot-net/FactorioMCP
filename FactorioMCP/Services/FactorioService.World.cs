@@ -248,9 +248,15 @@ internal sealed partial class FactorioService
             local pos = player.position
             local surface = player.surface
             local filter = "{{entityType}}"
-            local entities = surface.find_entities_filtered{name=filter, position=pos, radius={{radius}}}
+            -- An unknown name or type makes find_entities_filtered throw (live game: "Unknown entity name: tree"),
+            -- so search by name only for a known entity name, then by type
+            local entities = {}
+            if prototypes.entity[filter] then
+                entities = surface.find_entities_filtered{name=filter, position=pos, radius={{radius}}}
+            end
             if #entities == 0 then
-                entities = surface.find_entities_filtered{type=filter, position=pos, radius={{radius}}}
+                local ok, found = pcall(surface.find_entities_filtered, {type=filter, position=pos, radius={{radius}}})
+                if ok then entities = found end
             end
             if #entities == 0 then
                 rcon.print('{"success":false,"error":"not_found","filter":"'..filter..'","radius":{{radius}}}')
@@ -712,7 +718,7 @@ internal sealed partial class FactorioService
             parts[#parts+1] = '"entity":"'..esc(name)..'"'
             parts[#parts+1] = '"tile_width":'..tw
             parts[#parts+1] = '"tile_height":'..th
-            parts[#parts+1] = '"max_health":'..(proto.max_health or 0)
+            parts[#parts+1] = '"max_health":'..proto.get_max_health() -- Factorio 2.x: a method (max_health is gone)
             parts[#parts+1] = '"type":"'..esc(proto.type)..'"'
             if proto.get_crafting_speed then
                 parts[#parts+1] = '"crafting_speed":'..proto.get_crafting_speed()

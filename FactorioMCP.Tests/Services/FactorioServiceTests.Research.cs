@@ -44,7 +44,7 @@ public partial class FactorioServiceTests
         Assert.Contains("recipe.ingredients", detailCmd);
         Assert.Contains("recipe.products", detailCmd);
         Assert.Contains("recipe.energy", detailCmd);
-        Assert.Contains("recipe.category", detailCmd);
+        Assert.Contains("recipe.categories[1]", detailCmd); // 2.1: recipe.category is gone
 
         // GetAvailableRecipesAsync
         await _service.GetAvailableRecipesAsync();

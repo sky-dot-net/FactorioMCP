@@ -80,7 +80,17 @@ builder.Services
                     return new CallToolResult { Content = [new TextContentBlock { Text = refusal }], IsError = true };
                 }
 
-                var result = await next(context, cancellationToken);
+                CallToolResult result;
+                try
+                {
+                    result = await next(context, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException and not McpException)
+                {
+                    // The MCP library would answer only "An error occurred invoking '<tool>'.": give the agent the cause
+                    await Console.Error.WriteLineAsync($"[ToolCall] {toolName} failed: {ex}");
+                    return new CallToolResult { Content = [new TextContentBlock { Text = ToolErrors.ToJson(ex) }], IsError = true };
+                }
 
                 await Console.Error.WriteLineAsync($"[ToolCall] {toolName} completed");
 

@@ -267,7 +267,7 @@ public class EnergyServiceTests
     {
         await _service.GetPowerNetworkTopologyAsync();
 
-        Assert.Contains("neighbours.copper", _rcon.LastCommand!);
+        Assert.Contains("pole.get_wire_connector(defines.wire_connector_id.pole_copper, false)", _rcon.LastCommand!); // 2.x: pole.neighbours is gone
     }
 
     [Fact]

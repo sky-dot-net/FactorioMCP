@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace FactorioMCP.Services;
 
@@ -116,7 +116,7 @@ internal sealed partial class FactorioService
                 local prob = p.probability or 1
                 prods[#prods+1] = '{"type":"'..esc(p.type)..'","name":"'..esc(p.name)..'","amount":'..amt..',"probability":'..prob..'}'
             end
-            rcon.print('{"success":true,"name":"'..esc(recipe.name)..'","enabled":'..tostring(recipe.enabled)..',"energy":'..recipe.energy..',"category":"'..esc(recipe.category)..'","ingredients":['..table.concat(ings, ",")..'],"products":['..table.concat(prods, ",")..']}')
+            rcon.print('{"success":true,"name":"'..esc(recipe.name)..'","enabled":'..tostring(recipe.enabled)..',"energy":'..recipe.energy..',"category":"'..esc(recipe.categories[1] or "")..'","ingredients":['..table.concat(ings, ",")..'],"products":['..table.concat(prods, ",")..']}')
             """;
 
         return rcon.ExecuteLuaAsync(lua, cancellationToken);
@@ -134,7 +134,7 @@ internal sealed partial class FactorioService
             local parts = {}
             for name, recipe in pairs(force.recipes) do
                 if recipe.enabled then
-                    parts[#parts+1] = '{"name":"'..esc(name)..'","category":"'..esc(recipe.category)..'","energy":'..recipe.energy..'}'
+                    parts[#parts+1] = '{"name":"'..esc(name)..'","category":"'..esc(recipe.categories[1] or "")..'","energy":'..recipe.energy..'}'
                 end
             end
             rcon.print('{"recipes":['..table.concat(parts, ",")..'],"count":'..#parts..'}')

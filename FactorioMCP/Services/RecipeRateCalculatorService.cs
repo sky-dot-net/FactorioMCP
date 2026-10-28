@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using FactorioMCP.Rcon;
 
 namespace FactorioMCP.Services;
@@ -38,7 +38,7 @@ internal sealed class RecipeRateCalculatorService(RconClient rcon)
                 return
             end
             local energy = r.energy
-            local cat = r.category
+            local cat = r.categories[1] -- Factorio 2.1: recipe.category is gone
             {{machineClause}}
             local machine_name = machine_override
             local crafting_speed = 1.0

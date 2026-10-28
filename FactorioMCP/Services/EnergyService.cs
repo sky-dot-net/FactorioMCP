@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using FactorioMCP.Rcon;
 
 namespace FactorioMCP.Services;
@@ -181,8 +181,11 @@ internal sealed class EnergyService(RconClient rcon)
                         networks[nid].producers = {}
                     end
                     local nb = {}
-                    for _, n in pairs(pole.neighbours.copper) do
-                        if n.electric_network_id == nid then
+                    -- Factorio 2.x: copper wires are read through the pole's wire connector (pole.neighbours is gone)
+                    local connector = pole.get_wire_connector(defines.wire_connector_id.pole_copper, false)
+                    for _, c in pairs(connector and connector.connections or {}) do
+                        local n = c.target.owner
+                        if n.valid and n.electric_network_id == nid then
                             nb[#nb+1] = '{"name":"'..esc(n.name)..'","x":'..string.format("%.1f",n.position.x)..',"y":'..string.format("%.1f",n.position.y)..'}'
                         end
                     end
