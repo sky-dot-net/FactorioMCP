@@ -16,7 +16,7 @@ public partial class FactorioServiceTests
         Assert.Contains("find_entities_filtered", countCmd);
         Assert.Contains("get_item_count", countCmd);
         Assert.Contains("defines.inventory.chest", countCmd);
-        Assert.Contains("defines.inventory.furnace_source", countCmd);
+        Assert.Contains("defines.inventory.crafter_input", countCmd);
         Assert.Contains("\"total\":", countCmd);
     }
 

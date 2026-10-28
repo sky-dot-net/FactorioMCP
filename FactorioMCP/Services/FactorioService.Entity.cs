@@ -1,9 +1,56 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace FactorioMCP.Services;
 
 internal sealed partial class FactorioService
 {
+    /// <summary>
+    /// Lua helpers for building like a player:
+    /// <c>can_build</c> uses the manual build check (items lying on the ground do not block it; the strict script check
+    /// refused a furnace in front of a running drill because of one ore on the ground),
+    /// <c>blocked_by</c> names what blocks a spot, and <c>take_ground_items</c> moves items lying under a new entity into
+    /// the builder's inventory and drops what does not fit around the builder.
+    /// </summary>
+    internal const string LuaPlayerBuild = """
+        local function can_build(surface, name, pos, dir, force)
+            return surface.can_place_entity{name=name, position=pos, direction=dir, force=force, build_check_type=defines.build_check_type.manual}
+        end
+        local function blocked_by(surface, name, pos, dir)
+            local proto = prototypes.entity[name]
+            if not proto then return "unknown entity" end
+            local box = proto.collision_box
+            local hx = math.max(-box.left_top.x, box.right_bottom.x)
+            local hy = math.max(-box.left_top.y, box.right_bottom.y)
+            if dir == defines.direction.east or dir == defines.direction.west then hx, hy = hy, hx end
+            local x, y = pos[1] or pos.x, pos[2] or pos.y
+            local area = {{x - hx, y - hy}, {x + hx, y + hy}}
+            local skip = {["resource"] = true, ["item-entity"] = true, ["corpse"] = true, ["entity-ghost"] = true, ["tile-ghost"] = true}
+            local names, seen = {}, {}
+            for _, e in pairs(surface.find_entities_filtered{area = area}) do
+                if not skip[e.type] and not seen[e.name] then
+                    seen[e.name] = true
+                    names[#names + 1] = e.name
+                    if #names == 3 then break end
+                end
+            end
+            if #names > 0 then return table.concat(names, ", ") end
+            if surface.count_tiles_filtered{area = area, collision_mask = "water_tile"} > 0 then return "water" end
+            return "terrain"
+        end
+        local function take_ground_items(builder, placed)
+            -- Every item touching the new entity's box (live game: a drill drops its ore right on the edge)
+            for _, item in pairs(placed.surface.find_entities_filtered{area = placed.bounding_box, name = "item-on-ground"}) do
+                local stack = item.stack
+                local name, count, quality = stack.name, stack.count, stack.quality and stack.quality.name or "normal"
+                local inserted = builder.insert{name = name, count = count, quality = quality}
+                if inserted < count then
+                    placed.surface.spill_item_stack{position = builder.position, stack = {name = name, count = count - inserted, quality = quality}, allow_belts = false}
+                end
+                item.destroy()
+            end
+        end
+        """;
+
     /// <summary>
     /// Place an entity from the player's inventory at the specified position.
     /// Validates proximity, inventory contents, and position validity before placing.
@@ -19,6 +66,7 @@ internal sealed partial class FactorioService
         ArgumentException.ThrowIfNullOrWhiteSpace(direction);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
+            {{LuaPlayerBuild}}
             local player = game.connected_players[1]
             local surface = player.surface
             local pos = {{{x}}, {{y}}}
@@ -32,8 +80,8 @@ internal sealed partial class FactorioService
                 rcon.print('{"success":false,"error":"out_of_range","distance":'..string.format("%.1f", distance)..',"limit":'..player.build_distance..'}')
                 return
             end
-            if not surface.can_place_entity{name=name, position=pos, force=player.force, direction=dir} then
-                rcon.print('{"success":false,"error":"invalid_position","entity":"'..name..'","x":'..pos[1]..',"y":'..pos[2]..'}')
+            if not can_build(surface, name, pos, dir, player.force) then
+                rcon.print('{"success":false,"error":"invalid_position","entity":"'..name..'","x":'..pos[1]..',"y":'..pos[2]..',"blocked_by":"'..blocked_by(surface, name, pos, dir)..'"}')
                 return
             end
             if player.get_item_count(name) < 1 then
@@ -75,6 +123,7 @@ internal sealed partial class FactorioService
                 rcon.print('{"success":false,"error":"placement_failed","entity":"'..name..'","x":'..pos[1]..',"y":'..pos[2]..reason..'}')
                 return
             end
+            take_ground_items(player, placed)
             local type_info = ""
             if belt_type then type_info = ',"belt_type":"'..belt_type..'"' end
             rcon.print('{"success":true,"entity":"'..name..'","x":'..pos[1]..',"y":'..pos[2]..type_info..'}')
@@ -188,7 +237,7 @@ internal sealed partial class FactorioService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(itemName);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
-        ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
+        var inventoryKey = InventoryNames.Resolve(inventoryType);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
@@ -212,18 +261,9 @@ internal sealed partial class FactorioService
                 rcon.print('{"success":false,"error":"no_entity","x":{{x}},"y":{{y}}}')
                 return
             end
-            -- Map inventory type string to defines
-            local inv_map = {
-                fuel = defines.inventory.fuel,
-                furnace_source = defines.inventory.furnace_source,
-                furnace_result = defines.inventory.furnace_result,
-                chest = defines.inventory.chest,
-                assembling_machine_input = defines.inventory.assembling_machine_input,
-                assembling_machine_output = defines.inventory.assembling_machine_output
-            }
-            local inv_type = inv_map["{{inventoryType}}"]
+            local inv_type = defines.inventory["{{inventoryKey}}"]
             if not inv_type then
-                rcon.print('{"success":false,"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}"}')
+                rcon.print('{"success":false,"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
                 return
             end
             local inv = e.get_inventory(inv_type)
@@ -252,11 +292,11 @@ internal sealed partial class FactorioService
     /// Supports specifying the source inventory slot (fuel, input, output, etc.).
     /// Validates proximity before interacting.
     /// </summary>
-    public Task<string> RemoveItemsAsync(double x, double y, string itemName, int count, string inventoryType = "furnace_result", CancellationToken cancellationToken = default)
+    public Task<string> RemoveItemsAsync(double x, double y, string itemName, int count, string inventoryType = "crafter_output", CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(itemName);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
-        ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
+        var inventoryKey = InventoryNames.Resolve(inventoryType);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
@@ -280,17 +320,9 @@ internal sealed partial class FactorioService
                 rcon.print('{"success":false,"error":"no_entity","x":{{x}},"y":{{y}}}')
                 return
             end
-            local inv_map = {
-                fuel = defines.inventory.fuel,
-                furnace_source = defines.inventory.furnace_source,
-                furnace_result = defines.inventory.furnace_result,
-                chest = defines.inventory.chest,
-                assembling_machine_input = defines.inventory.assembling_machine_input,
-                assembling_machine_output = defines.inventory.assembling_machine_output
-            }
-            local inv_type = inv_map["{{inventoryType}}"]
+            local inv_type = defines.inventory["{{inventoryKey}}"]
             if not inv_type then
-                rcon.print('{"success":false,"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}"}')
+                rcon.print('{"success":false,"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
                 return
             end
             local inv = e.get_inventory(inv_type)
@@ -370,11 +402,14 @@ internal sealed partial class FactorioService
                 result = result..',"recipe":"'..esc(recipe.name)..'"'
             end
             -- Inventories
-            local inv_names = {"fuel", "furnace_source", "furnace_result", "chest", "assembling_machine_input", "assembling_machine_output"}
-            local inv_defines = {defines.inventory.fuel, defines.inventory.furnace_source, defines.inventory.furnace_result, defines.inventory.chest, defines.inventory.assembling_machine_input, defines.inventory.assembling_machine_output}
+            -- Factorio 2.1 names; fuel and chest share index 1, so name it by whether the entity burns fuel
+            local inv_names = {e.burner and "fuel" or "chest", "crafter_input", "crafter_output", "crafter_modules", "burnt_result", "lab_input", "lab_modules"}
             local inv_parts = {}
-            for i, inv_name in pairs(inv_names) do
-                local inv = e.get_inventory(inv_defines[i])
+            local seen_index = {}
+            for _, inv_name in ipairs(inv_names) do
+                local index = defines.inventory[inv_name]
+                local inv = index and not seen_index[index] and e.get_inventory(index)
+                if index then seen_index[index] = true end
                 if inv then
                     local contents = inv.get_contents()
                     local items = {}
@@ -462,17 +497,15 @@ internal sealed partial class FactorioService
         string inventoryType = "chest",
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
-        if (!inventoryType.All(c => c is (>= 'a' and <= 'z') or '_'))
-            throw new ArgumentException($"Invalid inventoryType '{inventoryType}': use names like chest, fuel, furnace_source.", nameof(inventoryType));
+        var inventoryKey = InventoryNames.Resolve(inventoryType);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
             {{LuaPickWithInventory}}
             local player = game.connected_players[1]
-            local inv_id = defines.inventory["{{inventoryType}}"]
+            local inv_id = defines.inventory["{{inventoryKey}}"]
             if not inv_id then
-                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"e.g. chest, fuel, furnace_source, furnace_result, assembling_machine_input, assembling_machine_output"}')
+                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
                 return
             end
             local e = pick_with_inventory(player.surface, {{x}}, {{y}}, inv_id)
@@ -518,17 +551,15 @@ internal sealed partial class FactorioService
         string inventoryType = "chest",
         CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
-        if (!inventoryType.All(c => c is (>= 'a' and <= 'z') or '_'))
-            throw new ArgumentException($"Invalid inventoryType '{inventoryType}': use names like chest, fuel, furnace_source.", nameof(inventoryType));
+        var inventoryKey = InventoryNames.Resolve(inventoryType);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
             {{LuaPickWithInventory}}
             local player = game.connected_players[1]
-            local inv_id = defines.inventory["{{inventoryType}}"]
+            local inv_id = defines.inventory["{{inventoryKey}}"]
             if not inv_id then
-                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"e.g. chest, fuel, furnace_source, furnace_result, assembling_machine_input, assembling_machine_output"}')
+                rcon.print('{"success":false,"error":"unknown_inventory_type","inventory_type":"{{inventoryType}}","hint":"{{InventoryNames.Common}}"}')
                 return
             end
             local e = pick_with_inventory(player.surface, {{x}}, {{y}}, inv_id)
@@ -563,6 +594,7 @@ internal sealed partial class FactorioService
         ArgumentException.ThrowIfNullOrWhiteSpace(direction);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
+            {{LuaPlayerBuild}}
             {{LuaJsonEscape}}
             local dir = defines.direction.{{direction}}
             local ix, iy = {{x}}, {{y}}
@@ -610,7 +642,7 @@ internal sealed partial class FactorioService
             end
 
             -- Check if an inserter can actually be placed here
-            local can_place = surface.can_place_entity{name="burner-inserter", position={ix, iy}, force=game.connected_players[1].force, direction=dir}
+            local can_place = can_build(surface, "burner-inserter", {ix, iy}, dir, game.connected_players[1].force)
 
             rcon.print('{"success":true'..
                 ',"inserter_position":{"x":'..ix..',"y":'..iy..'}'..
@@ -643,6 +675,7 @@ internal sealed partial class FactorioService
         // inbound = inserter drops into target (faces toward target)
         // outbound = inserter picks from target (faces away from target)
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
+            {{LuaPlayerBuild}}
             {{LuaJsonEscape}}
             {{LuaEntitySort}}
             local player = game.connected_players[1]
@@ -713,8 +746,8 @@ internal sealed partial class FactorioService
             end
 
             -- Check placement validity
-            if not surface.can_place_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, direction=dir} then
-                rcon.print('{"success":false,"error":"invalid_position","inserter":"{{inserterName}}","x":'..inserter_x..',"y":'..inserter_y..'}')
+            if not can_build(surface, "{{inserterName}}", {inserter_x, inserter_y}, dir, player.force) then
+                rcon.print('{"success":false,"error":"invalid_position","inserter":"{{inserterName}}","x":'..inserter_x..',"y":'..inserter_y..',"blocked_by":"'..blocked_by(surface, "{{inserterName}}", {inserter_x, inserter_y}, dir)..'"}')
                 return
             end
 
@@ -726,7 +759,8 @@ internal sealed partial class FactorioService
 
             -- Place the inserter
             player.remove_item{name="{{inserterName}}", count=1}
-            surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
+            local placed = surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
+            if placed then take_ground_items(player, placed) end
 
             local dir_names = {}
             for k, v in pairs(defines.direction) do dir_names[v] = k end
@@ -758,6 +792,7 @@ internal sealed partial class FactorioService
         ArgumentException.ThrowIfNullOrWhiteSpace(inserterName);
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
+            {{LuaPlayerBuild}}
             {{LuaJsonEscape}}
             {{LuaEntitySort}}
             local player = game.connected_players[1]
@@ -819,9 +854,9 @@ internal sealed partial class FactorioService
             end
 
             -- Check placement validity
-            if not surface.can_place_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, direction=dir} then
+            if not can_build(surface, "{{inserterName}}", {inserter_x, inserter_y}, dir, player.force) then
                 rcon.print('{"success":false,"error":"invalid_position","inserter":"{{inserterName}}","x":'..inserter_x..',"y":'..inserter_y..
-                    ',"message":"Cannot place inserter at midpoint. Entities may not be adjacent or the position is blocked."}')
+                    ',"blocked_by":"'..blocked_by(surface, "{{inserterName}}", {inserter_x, inserter_y}, dir)..'"}')
                 return
             end
 
@@ -833,7 +868,8 @@ internal sealed partial class FactorioService
 
             -- Place the inserter
             player.remove_item{name="{{inserterName}}", count=1}
-            surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
+            local placed = surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
+            if placed then take_ground_items(player, placed) end
 
             local dir_names = {}
             for k, v in pairs(defines.direction) do dir_names[v] = k end
@@ -869,6 +905,7 @@ internal sealed partial class FactorioService
         var escapedName = entityName.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
+            {{LuaPlayerBuild}}
             local player = game.connected_players[1]
             local surface = player.surface
             local name = "{{escapedName}}"
@@ -907,7 +944,7 @@ internal sealed partial class FactorioService
                         if math.abs(ox) == dist or math.abs(oy) == dist or dist == 0 then
                             local px = near_x + ox
                             local py = near_y + oy
-                            if surface.can_place_entity{name=name, position={px, py}, force=player.force, direction=dir} then
+                            if can_build(surface, name, {px, py}, dir, player.force) then
                                 local player_pos = player.position
                                 local ddx = px - player_pos.x
                                 local ddy = py - player_pos.y
@@ -960,6 +997,7 @@ internal sealed partial class FactorioService
                 rcon.print('{"success":false,"error":"placement_failed","entity":"'..name..'","x":'..best.x..',"y":'..best.y..reason..'}')
                 return
             end
+            take_ground_items(player, placed)
             rcon.print('{"success":true,"entity":"'..name..'","x":'..placed.position.x..',"y":'..placed.position.y..'}')
             """);
 

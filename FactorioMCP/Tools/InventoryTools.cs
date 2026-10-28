@@ -1,4 +1,4 @@
-using FactorioMCP.Services;
+﻿using FactorioMCP.Services;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
@@ -59,7 +59,7 @@ internal sealed class InventoryTools(FactorioService factorio, GameCommandQueue 
         double x,
         [Description("Y coordinate of the entity")]
         double y,
-        [Description("Source inventory: fuel, furnace_source, furnace_result, chest, assembling_machine_input, assembling_machine_output")]
+        [Description("Source inventory: " + InventoryNames.Common)]
         string inventoryType = "chest",
         CancellationToken cancellationToken = default)
     {
@@ -75,7 +75,7 @@ internal sealed class InventoryTools(FactorioService factorio, GameCommandQueue 
         double x,
         [Description("Y coordinate of the entity")]
         double y,
-        [Description("Inventory to inspect: fuel, furnace_source, furnace_result, chest, assembling_machine_input, assembling_machine_output")]
+        [Description("Inventory to inspect: " + InventoryNames.Common)]
         string inventoryType = "chest",
         CancellationToken cancellationToken = default)
     {

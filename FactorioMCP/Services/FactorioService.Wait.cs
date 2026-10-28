@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace FactorioMCP.Services;
 
@@ -132,6 +132,15 @@ internal sealed partial class FactorioService
         ArgumentException.ThrowIfNullOrWhiteSpace(targetStatus);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(pollInterval, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        targetStatus = targetStatus.Trim().ToLowerInvariant();
+        if (!targetStatus.All(c => c is (>= 'a' and <= 'z') or '_'))
+            return string.Create(CultureInfo.InvariantCulture,
+                $$"""{"status":"error","error":"unknown_status","target_status":"{{targetStatus.Replace("\"", "'")}}"}""");
+
+        // A status the game does not know never comes, so do not wait for it (live game: agents waited for 'idle')
+        var known = await rcon.ExecuteLuaAsync($$"""rcon.print(defines.entity_status["{{targetStatus}}"] and "yes" or "no")""", cancellationToken);
+        if (known.Trim() == "no")
+            return $$"""{"status":"error","error":"unknown_status","target_status":"{{targetStatus}}","hint":"e.g. working, no_fuel, no_power, item_ingredient_shortage, full_output, waiting_for_source_items"}""";
 
         var lua = string.Create(CultureInfo.InvariantCulture, $$"""
             {{LuaJsonEscape}}
@@ -200,7 +209,7 @@ internal sealed partial class FactorioService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(itemName);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetCount);
-        ArgumentException.ThrowIfNullOrWhiteSpace(inventoryType);
+        var inventoryKey = InventoryNames.Resolve(inventoryType);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(pollInterval, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
 
@@ -217,15 +226,7 @@ internal sealed partial class FactorioService
                 rcon.print('{"error":"no_entity","x":{{x}},"y":{{y}}}')
                 return
             end
-            local inv_map = {
-                fuel = defines.inventory.fuel,
-                furnace_source = defines.inventory.furnace_source,
-                furnace_result = defines.inventory.furnace_result,
-                chest = defines.inventory.chest,
-                assembling_machine_input = defines.inventory.assembling_machine_input,
-                assembling_machine_output = defines.inventory.assembling_machine_output
-            }
-            local inv_type = inv_map["{{inventoryType}}"]
+            local inv_type = defines.inventory["{{inventoryKey}}"]
             if not inv_type then
                 rcon.print('{"error":"invalid_inventory_type","inventory_type":"{{inventoryType}}"}')
                 return

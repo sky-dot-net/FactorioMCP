@@ -1,4 +1,4 @@
-using FactorioMCP.Models;
+﻿using FactorioMCP.Models;
 using FactorioMCP.Services;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -179,8 +179,8 @@ internal sealed class TaskTools(
     [McpServerTool, Description(
         "Find a furnace, walk to it, insert ore and fuel, wait for smelting, and collect output — all in one call. " +
         "Searches building memory first, then world entities for the nearest furnace. " +
-        "Inserts ore into furnace_source and fuel into the fuel slot, waits for smelting to finish, " +
-        "then collects the output item from furnace_result. " +
+        "Inserts ore into crafter_input and fuel into the fuel slot, waits for smelting to finish, " +
+        "then collects the output item from crafter_output. " +
         "Use this to smelt ores into plates without multiple manual tool calls.")]
     public Task<string> Smelt(
         [Description("Ore item name to smelt (e.g. 'iron-ore', 'copper-ore', 'stone')")]
@@ -238,8 +238,8 @@ internal sealed class TaskTools(
                     targetX, targetY, walk, 0, 0, 0, "walk_failed");
             }
 
-            // Step 3: Insert ore into furnace_source
-            var oreResult = await factorio.InsertItemsAsync(targetX, targetY, ore, count, "furnace_source", ct);
+            // Step 3: Insert ore into crafter_input
+            var oreResult = await factorio.InsertItemsAsync(targetX, targetY, ore, count, "crafter_input", ct);
             var oreInserted = ParseInsertedCount(oreResult);
 
             if (oreInserted == 0)
@@ -371,8 +371,8 @@ internal sealed class TaskTools(
                 rcon.print('{"error":"no_entity"}')
                 return
             end
-            local src = e.get_inventory(defines.inventory.furnace_source)
-            local dst = e.get_inventory(defines.inventory.furnace_result)
+            local src = e.get_inventory(defines.inventory.crafter_input)
+            local dst = e.get_inventory(defines.inventory.crafter_output)
             local src_count = src and src.get_item_count("{{ore}}") or 0
             local dst_count = dst and dst.get_item_count("{{outputItem}}") or 0
             local status_names = {}
@@ -388,7 +388,7 @@ internal sealed class TaskTools(
     private async Task<int> CollectOutputAsync(double x, double y, string outputItem, CancellationToken ct)
     {
         // Try to collect a large amount — RemoveItems will cap to what's available
-        var removeResult = await factorio.RemoveItemsAsync(x, y, outputItem, 1000, "furnace_result", ct);
+        var removeResult = await factorio.RemoveItemsAsync(x, y, outputItem, 1000, "crafter_output", ct);
         using var doc = JsonDocument.Parse(removeResult);
         var root = doc.RootElement;
 

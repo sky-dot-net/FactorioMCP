@@ -31,7 +31,7 @@ public partial class FactorioServiceTests
 
         // Verify custom inventory type
         await _service.TransferAllItemsAsync(10, 20, "furnace_result");
-        Assert.Contains("defines.inventory[\"furnace_result\"]", _rcon.LastCommand!);
+        Assert.Contains("defines.inventory[\"crafter_output\"]", _rcon.LastCommand!);
     }
 
     [Fact]

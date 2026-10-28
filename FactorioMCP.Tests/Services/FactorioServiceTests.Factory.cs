@@ -40,7 +40,7 @@ public partial class FactorioServiceTests
         Assert.StartsWith("/silent-command", missingCmd);
         Assert.Contains("5", missingCmd);
         Assert.Contains("10", missingCmd);
-        Assert.Contains("furnace_source", missingCmd);
+        Assert.Contains("crafter_input", missingCmd);
 
         // PickupItemsAsync
         await _service.PickupItemsAsync(15);

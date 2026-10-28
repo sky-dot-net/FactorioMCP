@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 
 namespace FactorioMCP.Services;
 
@@ -110,8 +110,8 @@ internal sealed partial class FactorioService
                     missing[#missing+1] = '{"slot":"fuel","issue":"empty"}'
                 end
             end
-            -- Check furnace source
-            local src_inv = e.get_inventory(defines.inventory.furnace_source)
+            -- Check crafter input (furnaces: ore)
+            local src_inv = e.get_inventory(defines.inventory.crafter_input)
             if src_inv and #src_inv > 0 then
                 local has_source = false
                 for i = 1, #src_inv do
@@ -119,24 +119,24 @@ internal sealed partial class FactorioService
                     if s.valid_for_read then has_source = true break end
                 end
                 if not has_source then
-                    missing[#missing+1] = '{"slot":"furnace_source","issue":"empty"}'
+                    missing[#missing+1] = '{"slot":"crafter_input","issue":"empty"}'
                 end
             end
             -- Check assembler inputs against recipe
             local recipe = e.get_recipe()
             if recipe then
-                local input_inv = e.get_inventory(defines.inventory.assembling_machine_input)
+                local input_inv = e.get_inventory(defines.inventory.crafter_input)
                 if input_inv then
                     for _, ingredient in pairs(recipe.ingredients) do
                         local have = input_inv.get_item_count(ingredient.name)
                         if have < ingredient.amount then
-                            missing[#missing+1] = '{"slot":"assembling_machine_input","item":"'..esc(ingredient.name)..'","have":'..have..',"need":'..ingredient.amount..',"issue":"insufficient"}'
+                            missing[#missing+1] = '{"slot":"crafter_input","item":"'..esc(ingredient.name)..'","have":'..have..',"need":'..ingredient.amount..',"issue":"insufficient"}'
                         end
                     end
                 end
             end
             -- Check output full
-            local out_inv = e.get_inventory(defines.inventory.furnace_result) or e.get_inventory(defines.inventory.assembling_machine_output)
+            local out_inv = e.get_inventory(defines.inventory.crafter_output)
             if out_inv then
                 local all_full = true
                 for i = 1, #out_inv do

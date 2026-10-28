@@ -1,4 +1,4 @@
-using FactorioMCP.Services;
+﻿using FactorioMCP.Services;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Globalization;
@@ -96,7 +96,7 @@ internal sealed class BatchTools(
         "Returns an array of results and aggregate counts.")]
     public Task<string> InsertItemsMultiple(
         [Description("JSON array of targets, each with x, y, item, count, and optional inventoryType. " +
-                      "Example: [{\"x\":1,\"y\":2,\"item\":\"coal\",\"count\":5},{\"x\":3,\"y\":4,\"item\":\"iron-ore\",\"count\":10,\"inventoryType\":\"furnace_source\"}]")]
+                      "Example: [{\"x\":1,\"y\":2,\"item\":\"coal\",\"count\":5},{\"x\":3,\"y\":4,\"item\":\"iron-ore\",\"count\":10,\"inventoryType\":\"crafter_input\"}]")]
         string targets,
         CancellationToken cancellationToken = default)
     {

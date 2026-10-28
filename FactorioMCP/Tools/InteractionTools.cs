@@ -1,4 +1,4 @@
-using FactorioMCP.Services;
+﻿using FactorioMCP.Services;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 
@@ -13,7 +13,7 @@ internal sealed class InteractionTools(FactorioService factorio, GameCommandQueu
 {
     [McpServerTool, Description(
         "Insert items from the player's inventory into a machine/entity at the specified position. " +
-        "Use this to fuel burner entities, load furnaces with ore, or stock assembling machines.")]
+        "Use this to fuel burner entities, load furnaces with ore, stock assembling machines, or put modules into machines (crafter_modules).")]
     public Task<string> InsertItems(
         [Description("X coordinate of the target entity")]
         double x,
@@ -23,7 +23,7 @@ internal sealed class InteractionTools(FactorioService factorio, GameCommandQueu
         string itemName,
         [Description("Number of items to insert")]
         int count,
-        [Description("Target inventory: fuel, furnace_source, furnace_result, chest, assembling_machine_input, assembling_machine_output")]
+        [Description("Target inventory: " + InventoryNames.Common)]
         string inventoryType = "fuel",
         CancellationToken cancellationToken = default)
     {
@@ -42,8 +42,8 @@ internal sealed class InteractionTools(FactorioService factorio, GameCommandQueu
         string itemName,
         [Description("Number of items to remove")]
         int count,
-        [Description("Source inventory: fuel, furnace_source, furnace_result, chest, assembling_machine_input, assembling_machine_output")]
-        string inventoryType = "furnace_result",
+        [Description("Source inventory: " + InventoryNames.Common)]
+        string inventoryType = "crafter_output",
         CancellationToken cancellationToken = default)
     {
         return queue.ExecuteAsync(nameof(RemoveItems), ct => factorio.RemoveItemsAsync(x, y, itemName, count, inventoryType, ct), cancellationToken);
