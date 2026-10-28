@@ -15,7 +15,10 @@ internal sealed class MovementTools(PathfindingService pathfinding, GameCommandQ
         "Walk to a target position using Factorio's built-in A* pathfinder. " +
         "Automatically finds a collision-free path around obstacles (buildings, water, cliffs). " +
         "Draws a debug path on the map for visualization. " +
-        "Returns status: arrived, stuck, timeout, or no_path if unreachable.")]
+        "Returns {status, x, y, target_x, target_y, distance, tolerance}; status is arrived (within tolerance), " +
+        "stuck (blocked even after planning new paths), timeout, no_path (unreachable), " +
+        "too_far (target more than 1000 tiles away: walk to a point on the way first), " +
+        "interrupted (another command stopped the walk), no_character or restricted_area.")]
     public Task<string> WalkToPosition(
         [Description("Target X coordinate to walk toward")]
         double targetX,

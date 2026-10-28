@@ -109,6 +109,36 @@ public class PathfindingServiceTests
     }
 
 
+    [Fact]
+    public async Task WalkTo_OverMaxDistance_ReturnsTooFarWithoutWalking()
+    {
+        // Live game: the pathfinder found no path for about 1600 tiles
+        var rcon = new ScriptedRconClient(["""{"x":0,"y":0}"""]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
+
+        var result = await pathfinding.WalkToAsync(1200, 0, 2, 30);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(result);
+        Assert.Equal("too_far", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal(PathfindingService.MaxWalkDistance, doc.RootElement.GetProperty("max_distance").GetInt32());
+        Assert.Contains("1200 tiles away", doc.RootElement.GetProperty("message").GetString());
+        Assert.Single(rcon.AllCommands);
+    }
+
+    [Fact]
+    public async Task WalkTo_AtMaxDistance_IsWalked()
+    {
+        var rcon = new ScriptedRconClient([
+            """{"x":0,"y":0}""", "ok", "1", """{"status":"ok","path":[{"x":1000,"y":0}]}""", "ok",
+            """{"x":1000,"y":0,"status":"arrived"}""", "ok",
+        ]);
+        var pathfinding = new PathfindingService(rcon) { PollInterval = TimeSpan.FromMilliseconds(10) };
+
+        var result = await pathfinding.WalkToAsync(1000, 0, 2, 30);
+
+        Assert.Contains("\"status\":\"arrived\"", result);
+    }
+
     // ── ParsePosition ───────────────────────────────────────────────
 
     [Fact]

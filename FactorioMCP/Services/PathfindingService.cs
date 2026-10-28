@@ -27,13 +27,16 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
     /// <summary>New paths planned from the current position when a walk gets stuck, before reporting stuck.</summary>
     internal const int MaxReplans = 2;
 
+    /// <summary>Longest walk in tiles (straight-line distance to the target); longer walks return status too_far.</summary>
+    internal const int MaxWalkDistance = 1000;
+
     private bool _pathHandlerInstalled;
 
     // ── Public API ──────────────────────────────────────────────────
 
     /// <summary>
     /// Walk to a target position using Factorio's A* pathfinder.
-    /// Returns a structured JSON result with status (arrived/stuck/timeout/no_path/interrupted/restricted_area),
+    /// Returns a structured JSON result with status (arrived/stuck/timeout/no_path/too_far/interrupted/restricted_area),
     /// final position, and distance. A walk that the restricted area blocked carries a restricted_area_note.
     /// </summary>
     public async Task<string> WalkToAsync(
@@ -64,6 +67,11 @@ internal sealed class PathfindingService(RconClient rcon, RestrictedAreaGuard? r
         // Covers walks to targets the tools found themselves (move_to_entity, gather_resource, ...)
         if (restrictedArea?.Blocks(targetX, targetY) == true)
             return FormatResult("restricted_area", px, py, targetX, targetY, dist, tolerance);
+
+        // Factorio's pathfinder gives up on long distances (live game: no_path for about 1600 tiles)
+        if (dist > MaxWalkDistance)
+            return FormatResult("too_far", px, py, targetX, targetY, dist, tolerance)[..^1] + string.Create(CultureInfo.InvariantCulture,
+                $$""","max_distance":{{MaxWalkDistance}},"message":"The target is {{dist:0}} tiles away; one walk covers at most {{MaxWalkDistance}} tiles. Walk to a point on the way first."}""");
 
         // Ensure path handler is installed (once per session)
         await EnsurePathHandlerInstalledAsync(cancellationToken);
