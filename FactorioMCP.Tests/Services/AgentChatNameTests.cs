@@ -50,7 +50,7 @@ public class AgentChatNameTests
 
         Assert.Contains("local sender = __agent_label()", rcon.LastCommand);
         Assert.Contains("game.print(sender .. \": hello\", { color = light })", rcon.LastCommand);
-        Assert.Contains("r = 0.6 + 0.4 * col.r", rcon.LastCommand);
+        Assert.Contains("if col and math.max(col.r, col.g, col.b) < 0.6 then", rcon.LastCommand);
         Assert.Contains("You have not chosen a name yet", rcon.LastCommand);
     }
 

@@ -115,7 +115,11 @@ internal sealed partial class FactorioService
                 local hint = ""
                 {{hint}}
                 local col = agent.color
-                local light = col and { r = 0.6 + 0.4 * col.r, g = 0.6 + 0.4 * col.g, b = 0.6 + 0.4 * col.b } or nil
+                -- the character colour as is, unless it is too dark to read on the chat background
+                local light = col
+                if col and math.max(col.r, col.g, col.b) < 0.6 then
+                    light = { r = 0.6 + 0.4 * col.r, g = 0.6 + 0.4 * col.g, b = 0.6 + 0.4 * col.b }
+                end
                 game.print(sender .. ": {{escaped}}", { color = light })
                 rcon.print('{"status":"sent","sender":"' .. sender .. '"' .. hint .. '}')
                 """;

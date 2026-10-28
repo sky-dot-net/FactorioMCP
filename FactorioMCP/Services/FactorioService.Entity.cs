@@ -65,12 +65,14 @@ internal sealed partial class FactorioService
                 end
             end
             player.remove_item{name=name, count=1}
-            local create_args = {name=name, position=pos, force=player.force, player=player, direction=dir}
+            local create_args = {name=name, position=pos, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
             if belt_type then create_args.type = belt_type end
-            local placed = surface.create_entity(create_args)
-            if not placed then
+            local ok, placed = pcall(surface.create_entity, create_args)
+            if not ok or not placed then
+                -- give the item back: a Lua error in create_entity must not lose it
                 player.insert{name=name, count=1}
-                rcon.print('{"success":false,"error":"placement_failed","entity":"'..name..'","x":'..pos[1]..',"y":'..pos[2]..'}')
+                local reason = ok and "" or (',"detail":"'..tostring(placed):gsub("[" .. string.char(92, 34) .. "]", "'")..'"')
+                rcon.print('{"success":false,"error":"placement_failed","entity":"'..name..'","x":'..pos[1]..',"y":'..pos[2]..reason..'}')
                 return
             end
             local type_info = ""
@@ -166,7 +168,7 @@ internal sealed partial class FactorioService
             local dir_names = {}
             for k, v in pairs(defines.direction) do dir_names[v] = k end
             local prev_dir = dir_names[e.direction] or "unknown"
-            local rotated = e.rotate({reverse={{(reverse ? "true" : "false")}}, by_player=player})
+            local rotated = e.rotate({reverse={{(reverse ? "true" : "false")}}, by_player=(player.object_name == "LuaPlayer" and player or nil)})
             if not rotated then
                 rcon.print('{"success":false,"error":"rotation_failed","entity":"'..esc(e.name)..'","direction":"'..prev_dir..'"}')
                 return
@@ -716,7 +718,7 @@ internal sealed partial class FactorioService
 
             -- Place the inserter
             player.remove_item{name="{{inserterName}}", count=1}
-            surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=player, direction=dir}
+            surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
 
             local dir_names = {}
             for k, v in pairs(defines.direction) do dir_names[v] = k end
@@ -823,7 +825,7 @@ internal sealed partial class FactorioService
 
             -- Place the inserter
             player.remove_item{name="{{inserterName}}", count=1}
-            surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=player, direction=dir}
+            surface.create_entity{name="{{inserterName}}", position={inserter_x, inserter_y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
 
             local dir_names = {}
             for k, v in pairs(defines.direction) do dir_names[v] = k end
@@ -941,12 +943,13 @@ internal sealed partial class FactorioService
                     end
                 end
             end
-            local create_args = {name=name, position={best.x, best.y}, force=player.force, player=player, direction=dir}
+            local create_args = {name=name, position={best.x, best.y}, force=player.force, player=(player.object_name == "LuaPlayer" and player or nil), direction=dir}
             if belt_type then create_args.type = belt_type end
-            local placed = surface.create_entity(create_args)
-            if not placed then
+            local ok, placed = pcall(surface.create_entity, create_args)
+            if not ok or not placed then
                 player.insert{name=name, count=1}
-                rcon.print('{"success":false,"error":"placement_failed","entity":"'..name..'","x":'..best.x..',"y":'..best.y..'}')
+                local reason = ok and "" or (',"detail":"'..tostring(placed):gsub("[" .. string.char(92, 34) .. "]", "'")..'"')
+                rcon.print('{"success":false,"error":"placement_failed","entity":"'..name..'","x":'..best.x..',"y":'..best.y..reason..'}')
                 return
             end
             rcon.print('{"success":true,"entity":"'..name..'","x":'..placed.position.x..',"y":'..placed.position.y..'}')
