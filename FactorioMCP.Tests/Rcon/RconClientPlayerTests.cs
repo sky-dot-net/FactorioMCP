@@ -67,7 +67,8 @@ public class RconClientPlayerTests
 
         await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
 
-        Assert.StartsWith("/silent-command local function __agent()", rcon.LastCommand);
+        Assert.StartsWith("/silent-command local function __agent_label()", rcon.LastCommand);
+        Assert.Contains("local function __agent()", rcon.LastCommand);
         Assert.Contains("storage.agent_by_name[\"agent\"]", rcon.LastCommand);
         Assert.EndsWith("\nlocal p = __agent()", rcon.LastCommand);
     }
@@ -164,7 +165,7 @@ public class RconClientPlayerTests
 
         await rcon.ExecuteLuaAsync("local p = game.connected_players[1]");
 
-        Assert.DoesNotContain("c.color", rcon.LastCommand);
+        Assert.DoesNotContain("c.color = {", rcon.LastCommand);
     }
 
     [Fact]

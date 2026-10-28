@@ -58,6 +58,20 @@ internal class RconClient : IAsyncDisposable, IDisposable
     /// </summary>
     public string? LuaPrelude { get; }
 
+    /// <summary>
+    /// Name of the scripted agent character (<c>FACTORIO_AGENT</c>) in agent mode; null in player mode.
+    /// </summary>
+    public string? AgentName { get; }
+
+    /// <summary>Agent name of the MCP engineer. It is red and its chat and label name is fixed.</summary>
+    internal const string EngineerAgentName = "engineer";
+
+    /// <summary>Chat and label name of the MCP engineer, shown without the <c>[AI]</c> prefix.</summary>
+    internal const string EngineerDisplayName = "Factorio MCP Engineer";
+
+    internal static bool IsEngineer(string? agentName) =>
+        string.Equals(agentName, EngineerAgentName, StringComparison.OrdinalIgnoreCase);
+
     public RconClient(ILogger<RconClient>? logger = null, IConfiguration? configuration = null)
     {
         _logger = logger ?? NullLogger<RconClient>.Instance;
@@ -80,6 +94,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
         agentName = string.IsNullOrWhiteSpace(agentName) ? DefaultAgentName : agentName.Trim();
         ValidateName(agentName, "FACTORIO_AGENT");
         PlayerExpression = AgentExpression;
+        AgentName = agentName;
         LuaPrelude = BuildAgentPrelude(agentName, ResolveAgentColor(agentName, configuration["FACTORIO_AGENT_COLOR"]));
     }
 
@@ -94,7 +109,7 @@ internal class RconClient : IAsyncDisposable, IDisposable
     {
         setting = setting?.Trim();
         if (string.IsNullOrEmpty(setting))
-            return string.Equals(agentName, "engineer", StringComparison.OrdinalIgnoreCase) ? (0.9, 0.05, 0.05) : null;
+            return IsEngineer(agentName) ? (0.9, 0.05, 0.05) : null;
         if (string.Equals(setting, "none", StringComparison.OrdinalIgnoreCase))
             return null;
 
@@ -137,6 +152,12 @@ internal class RconClient : IAsyncDisposable, IDisposable
     /// handler resolves negative indices through <c>storage.agent_chars</c>.
     /// </summary>
     internal static string BuildAgentPrelude(string agentName, (double R, double G, double B)? color = null) => $$"""
+        local function __agent_label()
+            local chosen = storage.agent_display_names and storage.agent_display_names["{{agentName}}"]
+            {{(IsEngineer(agentName)
+                ? $"return \"{EngineerDisplayName}\""
+                : $"return \"[AI] \" .. (chosen or \"{agentName}\")")}}
+        end
         local function __agent()
             storage.agent_by_name = storage.agent_by_name or {}
             storage.agent_chars = storage.agent_chars or {}
@@ -151,6 +172,14 @@ internal class RconClient : IAsyncDisposable, IDisposable
             end
             storage.agent_chars[-c.unit_number] = c
             {{AgentColorLua(color)}}
+            storage.agent_labels = storage.agent_labels or {}
+            local label, text = storage.agent_labels[c.unit_number], __agent_label()
+            if not (label and label.valid) then
+                storage.agent_labels[c.unit_number] = rendering.draw_text({ text = text, surface = c.surface, target = { entity = c, offset = { 0, -2.6 } },
+                    color = c.color, scale = 1.2, alignment = "center", vertical_alignment = "bottom" })
+            elseif label.text ~= text then
+                label.text = text
+            end
             return setmetatable({}, {
                 __index = function(_, k)
                     if k == "character" then return c end

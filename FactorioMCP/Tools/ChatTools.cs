@@ -27,13 +27,25 @@ internal sealed class ChatTools(FactorioService factorio, GameCommandQueue queue
     }
 
     [McpServerTool, Description(
-        "Send a chat message visible to all connected players. " +
-        "The message is automatically tagged with '[AI]' to distinguish it from player messages.")]
+        "Send a chat message visible to all connected players. The sender is shown as '[AI] <your name>' " +
+        "(choose the name once with set_agent_name). Returns the sender label used.")]
     public Task<string> SendChatMessage(
         [Description("The message text to send to the in-game chat")]
         string message,
         CancellationToken cancellationToken = default)
     {
         return queue.ExecuteAsync(nameof(SendChatMessage), ct => factorio.SendChatMessageAsync(message, ct), cancellationToken);
+    }
+
+    [McpServerTool, Description(
+        "Choose your own name when you join the server for the first time. Other players see it as " +
+        "'[AI] <name>' in the chat and above your character. The name is chosen once and cannot be changed later; " +
+        "calling again with the same name is fine. Returns {status, chat_name} or {status:\"error\", error}.")]
+    public Task<string> SetAgentName(
+        [Description("Your name: 1-30 characters (letters, digits, space, _ . ' -), starting with a letter or digit.")]
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        return queue.ExecuteAsync(nameof(SetAgentName), ct => factorio.SetAgentNameAsync(name, ct), cancellationToken);
     }
 }
