@@ -180,6 +180,24 @@ internal class RconClient : IAsyncDisposable, IDisposable
             elseif label.text ~= text then
                 label.text = text
             end
+            -- Agents are no players, so the map does not show them by itself: a dot and the name in map view
+            storage.agent_map_labels = storage.agent_map_labels or {}
+            local mark = storage.agent_map_labels[c.unit_number]
+            if not (mark and mark.dot.valid and mark.text.valid) then
+                if mark then
+                    if mark.dot.valid then mark.dot.destroy() end
+                    if mark.text.valid then mark.text.destroy() end
+                end
+                storage.agent_map_labels[c.unit_number] = {
+                    dot = rendering.draw_circle({ color = c.color, radius = 1.2, filled = true, target = { entity = c },
+                        surface = c.surface, render_mode = "chart" }),
+                    text = rendering.draw_text({ text = text, surface = c.surface, target = { entity = c, offset = { 0, -1.5 } },
+                        color = c.color, scale = 1.4, alignment = "center", vertical_alignment = "bottom",
+                        scale_with_zoom = true, render_mode = "chart" }),
+                }
+            elseif mark.text.text ~= text then
+                mark.text.text = text
+            end
             return setmetatable({}, {
                 __index = function(_, k)
                     if k == "character" then return c end

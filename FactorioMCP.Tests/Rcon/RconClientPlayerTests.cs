@@ -197,4 +197,15 @@ public class RconClientPlayerTests
         Assert.Contains("storage.mine_states[player.index] = {position = epos}", rcon.LastCommand!);
         Assert.DoesNotContain("connected_players[1]", rcon.LastCommand!);
     }
+
+    [Fact]
+    public void AgentPrelude_ShowsTheAgentOnTheMap()
+    {
+        // Agents are no players, so the map did not show them
+        var prelude = RconClient.BuildAgentPrelude("agent");
+
+        Assert.Contains("storage.agent_map_labels[c.unit_number] = {", prelude);
+        Assert.Equal(2, prelude.Split("render_mode = \"chart\"").Length - 1);
+        Assert.Contains("elseif mark.text.text ~= text then", prelude);
+    }
 }
